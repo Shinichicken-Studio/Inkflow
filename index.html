@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>溢彩畫 · Inkflow</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(1200px 800px at 50% -10%, #1a2030 0%, #0d0f15 58%) #0d0f15;
+    color: #e8e8ea;
+    font-family: "Segoe UI", "Microsoft JhengHei", "PingFang TC", sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    user-select: none; -webkit-user-select: none;
+    touch-action: manipulation;
+  }
+  .app { width: 100%; max-width: 1080px; padding: 22px 16px 36px; }
+  header { display: flex; align-items: baseline; gap: 14px; }
+  h1 { font-size: 26px; letter-spacing: 8px; color: #f0e6d2; font-weight: 700; }
+  h1 .en { font-size: 12px; letter-spacing: 5px; color: #8f96a8; font-weight: 400; margin-left: 4px; }
+  .sub { color: #7d8496; font-size: 13px; }
+  main { display: flex; gap: 22px; align-items: flex-start; justify-content: center; margin-top: 16px; }
+
+  /* ---------- 棋盤 ---------- */
+  .board-wrap {
+    position: relative; overflow: hidden;
+    padding: 10px; border-radius: 14px;
+    background: #12151d; border: 1px solid #262c3a;
+    box-shadow: 0 10px 40px rgba(0,0,0,.45), inset 0 0 70px rgba(90,110,180,.05);
+    width: min(92vw, 66vh, 560px);
+    flex-shrink: 0;
+  }
+  .board { display: grid; gap: 3px; width: 100%; aspect-ratio: 1; }
+  .cell {
+    position: relative; border-radius: 3px;
+    transition: background-color .3s ease;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.05);
+  }
+  .cell.wave { animation: wavePulse .38s cubic-bezier(.3,.7,.4,1) both; }
+  @keyframes wavePulse {
+    0%   { transform: scale(1);    filter: brightness(1); }
+    45%  { transform: scale(1.16); filter: brightness(1.6); }
+    100% { transform: scale(1);    filter: brightness(1); }
+  }
+  .cell.enter { animation: cellIn .3s ease-out both; }
+  @keyframes cellIn { from { transform: scale(.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+  .cell.obstacle { background: #171923; box-shadow: inset 0 0 0 1px #2a2e3c; }
+  .cell.obstacle::before, .cell.obstacle::after {
+    content: ""; position: absolute; left: 22%; right: 22%;
+    top: calc(50% - 1.5px); height: 3px; border-radius: 2px; background: #454b5e;
+  }
+  .cell.obstacle::before { transform: rotate(45deg); }
+  .cell.obstacle::after  { transform: rotate(-45deg); }
+
+  .marker { position: absolute; inset: 8%; pointer-events: none; z-index: 2;
+            animation: markerPulse 2s ease-in-out infinite;
+            filter: drop-shadow(0 0 5px rgba(255,255,255,.9)); }
+  .marker svg { width: 100%; height: 100%; display: block; }
+  @keyframes markerPulse { 0%,100% { transform: scale(1); opacity: .85; } 50% { transform: scale(1.14); opacity: 1; } }
+
+  .ring { position: absolute; width: 10px; height: 10px; border: 2px solid #fff;
+          border-radius: 50%; transform: translate(-50%, -50%);
+          pointer-events: none; z-index: 3; }
+
+  .info-line { margin-top: 10px; text-align: center; color: #6f7688; font-size: 12.5px; letter-spacing: 1px; }
+
+  /* ---------- 右側控制台 ---------- */
+  .panel {
+    width: 256px; flex-shrink: 0;
+    background: #151923; border: 1px solid #262c3a; border-radius: 14px;
+    padding: 18px; display: flex; flex-direction: column; gap: 15px;
+  }
+  .label { font-size: 12px; color: #8a90a2; letter-spacing: 3px; margin-bottom: 6px; }
+  .target-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+                background: #101420; border-radius: 10px; border: 1px solid #232a3a; }
+  .target-swatch { width: 28px; height: 28px; border-radius: 8px;
+                   background: var(--tc); box-shadow: 0 0 12px var(--tc); }
+  .target-name { font-size: 16px; font-weight: 600; }
+
+  .steps-box { text-align: center; padding: 4px 0 2px; }
+  .steps-num { font-size: 48px; font-weight: 700; line-height: 1.05; color: #f0e6d2; display: inline-block; }
+  .steps-num.warn   { color: #f2b636; }
+  .steps-num.danger { color: #e5495f; }
+  .steps-num.bump { animation: bump .35s ease; }
+  @keyframes bump { 0% { transform: scale(1); } 35% { transform: scale(1.35); } 100% { transform: scale(1); } }
+  .steps-cap { font-size: 12px; color: #8a90a2; margin-top: 2px; }
+  .pips { display: flex; gap: 5px; justify-content: center; margin-top: 8px; flex-wrap: wrap; }
+  .pip { width: 9px; height: 9px; border-radius: 50%;
+         background: #d9b36c; box-shadow: 0 0 6px rgba(217,179,108,.5);
+         transition: background .3s, box-shadow .3s; }
+  .pip.used { background: #2c3345; box-shadow: none; }
+
+  .colors { display: flex; flex-direction: column; gap: 8px; }
+  .color-btn {
+    display: flex; align-items: center; gap: 11px; width: 100%;
+    padding: 9px 12px; border-radius: 10px;
+    border: 1px solid #262c3a; background: #101420; color: #dfe2ea;
+    cursor: pointer; font-size: 15px; font-family: inherit; position: relative;
+    transition: transform .12s, border-color .15s, box-shadow .15s, opacity .2s;
+  }
+  .color-btn:hover:not(:disabled) { transform: translateY(-1px); border-color: var(--c);
+                                    box-shadow: 0 4px 16px -6px var(--c); }
+  .color-btn:active:not(:disabled) { transform: scale(.97); }
+  .color-btn:disabled { opacity: .38; cursor: not-allowed; }
+  .color-btn.current { opacity: 1; border-color: var(--c);
+                       box-shadow: inset 0 0 0 1px var(--c); cursor: default; }
+  .swatch { width: 22px; height: 22px; border-radius: 50%; background: var(--c); flex-shrink: 0;
+            box-shadow: inset 0 -3px 5px rgba(0,0,0,.3), 0 0 9px -2px var(--c); }
+  .color-btn .right { margin-left: auto; display: flex; align-items: center; gap: 7px; }
+  .color-btn .badge { display: none; font-size: 11px; color: var(--c);
+                      border: 1px solid var(--c); padding: 1px 8px; border-radius: 20px; }
+  .color-btn.current .badge { display: inline-block; }
+  .color-btn kbd { font-size: 11px; color: #767d90; border: 1px solid #2c3345;
+                   border-radius: 4px; padding: 0 6px; line-height: 17px; }
+  .color-btn.hint-flash { animation: hintFlash .9s ease 2; }
+  @keyframes hintFlash { 0%,100% { box-shadow: inset 0 0 0 0 transparent; }
+                         50% { box-shadow: 0 0 0 3px var(--c), 0 0 20px var(--c); } }
+
+  .actions { display: flex; gap: 8px; }
+  .btn {
+    padding: 9px 6px; border-radius: 10px; flex: 1; white-space: nowrap;
+    border: 1px solid #2c3448; background: #101420; color: #dfe2ea;
+    cursor: pointer; font-size: 13px; font-family: inherit; transition: all .15s;
+  }
+  .btn:hover { border-color: #d9b36c; color: #f0e6d2; }
+  .btn.primary { background: linear-gradient(180deg, #e8c877, #c9a250);
+                 color: #1a1408; border: 1px solid transparent; font-weight: 700; }
+  .btn.primary:hover { filter: brightness(1.08); color: #1a1408; }
+
+  .seg { display: flex; background: #101420; border: 1px solid #262c3a;
+         border-radius: 10px; padding: 3px; gap: 3px; }
+  .seg button { flex: 1; padding: 7px 0; background: none; border: 0; color: #8a90a2;
+                border-radius: 8px; cursor: pointer; font-size: 13px; font-family: inherit;
+                transition: background .15s, color .15s; }
+  .seg button.active { background: #232c42; color: #f0e6d2; }
+  .help { font-size: 11.5px; color: #5f6678; text-align: center; line-height: 1.7; }
+
+  /* ---------- 結算 ---------- */
+  .overlay {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(8,10,15,.72); backdrop-filter: blur(4px);
+    opacity: 0; pointer-events: none; transition: opacity .3s;
+  }
+  .overlay.show { opacity: 1; pointer-events: auto; }
+  .card {
+    background: #161b28; border: 1px solid #2c3448; border-radius: 18px;
+    padding: 38px 46px; text-align: center;
+    box-shadow: 0 30px 80px rgba(0,0,0,.6);
+    transform: translateY(14px) scale(.95);
+    transition: transform .35s cubic-bezier(.2,.9,.3,1.25);
+  }
+  .overlay.show .card { transform: none; }
+  .card h2 { font-size: 30px; letter-spacing: 12px; margin-bottom: 12px; padding-left: 12px; }
+  .card.win h2  { color: #e8c877; text-shadow: 0 0 26px rgba(232,200,119,.5); }
+  .card.lose h2 { color: #e5495f; text-shadow: 0 0 26px rgba(229,73,95,.4); }
+  .card p { color: #9aa1b4; margin-bottom: 24px; font-size: 14px; }
+  .card .btns { display: flex; gap: 10px; justify-content: center; }
+  .card .btn { flex: none; padding: 10px 24px; }
+
+  .confetti { position: fixed; z-index: 55; pointer-events: none;
+              width: 8px; height: 8px; border-radius: 2px; left: 50%; top: 42%; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%) translateY(8px);
+    background: #1c2233; border: 1px solid #2e364a; border-radius: 24px;
+    padding: 9px 20px; color: #dfe2ea; font-size: 13px;
+    opacity: 0; transition: opacity .25s, transform .25s;
+    pointer-events: none; z-index: 60; white-space: nowrap;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  @media (max-width: 880px) {
+    main { flex-direction: column; align-items: center; }
+    .panel { width: min(92vw, 560px); }
+    .colors { display: grid; grid-template-columns: 1fr 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>溢彩畫<span class="en">INKFLOW</span></h1>
+    <span class="sub">從中心擴散，將整個畫布染成目標顏色</span>
+  </header>
+  <main>
+    <div>
+      <div class="board-wrap" id="boardWrap">
+        <div class="board" id="board"></div>
+      </div>
+      <div class="info-line" id="infoLine"></div>
+    </div>
+    <aside class="panel">
+      <div>
+        <div class="label">目標顏色</div>
+        <div class="target-row">
+          <div class="target-swatch" id="targetSwatch"></div>
+          <div class="target-name" id="targetName"></div>
+        </div>
+      </div>
+      <div class="steps-box">
+        <div class="label">剩餘步數</div>
+        <div class="steps-num" id="stepsNum">7</div>
+        <div class="steps-cap" id="stepsCap"></div>
+        <div class="pips" id="pips"></div>
+      </div>
+      <div>
+        <div class="label">選擇顏色</div>
+        <div class="colors" id="colors"></div>
+      </div>
+      <div class="actions">
+        <button class="btn" id="hintBtn">提示</button>
+        <button class="btn" id="restartBtn">重試</button>
+        <button class="btn" id="newBtn">新關卡</button>
+        <button class="btn" id="soundBtn" style="flex:0 0 42px" title="音效開關">🔊</button>
+      </div>
+      <div>
+        <div class="label">難度</div>
+        <div class="seg" id="diffSeg">
+          <button data-diff="easy">簡單</button>
+          <button data-diff="normal" class="active">普通</button>
+          <button data-diff="hard">困難</button>
+        </div>
+      </div>
+      <div class="help">鍵盤：1–5 選色 ・ H 提示<br>R 重新開始 ・ N 新關卡</div>
+    </aside>
+  </main>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="card" id="card">
+    <h2 id="cardTitle"></h2>
+    <p id="cardDesc"></p>
+    <div class="btns">
+      <button class="btn primary" id="cardPrimary"></button>
+      <button class="btn" id="cardSecondary"></button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="game.js"></script>
+<script>
+(function () {
+  "use strict";
+  var Core = window.InkflowCore;
+  var WAVE = 45; // 每格波紋延遲（毫秒），依 BFS 距離擴散、自然繞過障礙物
+
+  var PALETTE = [
+    { color: "#e5495f", name: "紅" },
+    { color: "#f2b636", name: "黃" },
+    { color: "#3d9df0", name: "藍" },
+    { color: "#3fc46d", name: "綠" },
+    { color: "#9d6cf0", name: "紫" }
+  ];
+  var DIFF_NAMES = { easy: "簡單", normal: "普通", hard: "困難" };
+
+  var MARKER_SVG =
+    '<svg viewBox="0 0 24 24" fill="none">' +
+    '<path d="M4 8V6a2 2 0 0 1 2-2h2 M16 4h2a2 2 0 0 1 2 2v2 M20 16v2a2 2 0 0 1-2 2h-2 M8 20H6a2 2 0 0 1-2-2v-2"' +
+    ' stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>' +
+    '<circle cx="12" cy="12" r="2.6" fill="#fff"/></svg>';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var boardEl = $("board"), boardWrap = $("boardWrap"), infoLine = $("infoLine");
+  var colorsEl = $("colors"), stepsNum = $("stepsNum"), stepsCap = $("stepsCap"), pipsEl = $("pips");
+  var targetSwatch = $("targetSwatch"), targetName = $("targetName");
+  var overlay = $("overlay"), card = $("card"), cardTitle = $("cardTitle"), cardDesc = $("cardDesc");
+  var cardPrimary = $("cardPrimary"), cardSecondary = $("cardSecondary");
+  var toastEl = $("toast");
+
+  var difficulty = "normal";
+  var level = null, game = null;
+  var cellEls = [], colorBtns = [];
+  var cleanupTimer = null, overlayTimer = null, toastTimer = null;
+
+  // ---------- 音效（WebAudio 合成，無需外部檔案） ----------
+  var audioOn = true;
+  try { audioOn = localStorage.getItem("inkflow-sound") !== "0"; } catch (e) {}
+  var actx = null;
+  function tone(freq0, freq1, dur, type, vol, delay) {
+    if (!audioOn) return;
+    try {
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      var t = actx.currentTime + (delay || 0);
+      var o = actx.createOscillator(), g = actx.createGain();
+      o.type = type || "triangle";
+      o.frequency.setValueAtTime(freq0, t);
+      if (freq1 && freq1 !== freq0) o.frequency.exponentialRampToValueAtTime(freq1, t + dur);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol || 0.1, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(actx.destination);
+      o.start(t); o.stop(t + dur + 0.05);
+    } catch (e) {}
+  }
+  function sndMove(absorbedAny) {
+    tone(300, 520, 0.18, "triangle", 0.09);
+    if (absorbedAny) tone(520, 780, 0.16, "triangle", 0.08, 0.09);
+  }
+  function sndWin() {
+    [523, 659, 784, 1047].forEach(function (f, i) { tone(f, f, 0.32, "triangle", 0.11, i * 0.13); });
+  }
+  function sndLose() {
+    tone(230, 140, 0.4, "sawtooth", 0.06);
+    tone(170, 105, 0.5, "sawtooth", 0.05, 0.16);
+  }
+
+  function newLevel() {
+    var preset = Object.assign({}, Core.PRESETS[difficulty]);
+    level = Core.generateLevel(preset) || Core.generateLevel(Object.assign(preset, { attempts: 300 }));
+    game = Core.createGame(level);
+    buildBoard(true);
+    buildColorButtons();
+    updatePanel(false);
+    updateInfo();
+    hideOverlay();
+  }
+
+  function restart() {
+    game = Core.createGame(level);
+    buildBoard(true);
+    updatePanel(false);
+    hideOverlay();
+  }
+
+  function buildBoard(entrance) {
+    clearTimeout(cleanupTimer);
+    boardEl.innerHTML = "";
+    boardEl.style.gridTemplateColumns = "repeat(" + level.w + ", 1fr)";
+    cellEls = [];
+    for (var i = 0; i < level.w * level.h; i++) {
+      var el = document.createElement("div");
+      el.className = "cell";
+      var v = game.grid[i];
+      var x = i % level.w, y = (i / level.w) | 0;
+      if (v === Core.OBSTACLE) {
+        el.classList.add("obstacle");
+      } else {
+        el.style.backgroundColor = PALETTE[v].color;
+      }
+      if (entrance) {
+        el.style.animationDelay = ((Math.abs(x - level.sx) + Math.abs(y - level.sy)) * 16) + "ms";
+        el.classList.add("enter");
+        el.addEventListener("animationend", function () {
+          this.classList.remove("enter");
+          this.style.animationDelay = "0ms";
+        }, { once: true });
+      }
+      if (x === level.sx && y === level.sy) {
+        var m = document.createElement("div");
+        m.className = "marker";
+        m.innerHTML = MARKER_SVG;
+        el.appendChild(m);
+      }
+      boardEl.appendChild(el);
+      cellEls.push(el);
+    }
+  }
+
+  function buildColorButtons() {
+    colorsEl.innerHTML = "";
+    colorBtns = [];
+    for (var c = 0; c < level.colors; c++) {
+      (function (c) {
+        var b = document.createElement("button");
+        b.className = "color-btn";
+        b.style.setProperty("--c", PALETTE[c].color);
+        b.innerHTML =
+          '<span class="swatch"></span><span class="cname">' + PALETTE[c].name + "</span>" +
+          '<span class="right"><span class="badge">目前</span><kbd>' + (c + 1) + "</kbd></span>";
+        b.addEventListener("click", function () { onColor(c); });
+        colorsEl.appendChild(b);
+        colorBtns.push(b);
+      })(c);
+    }
+  }
+
+  function updatePanel(animateSteps) {
+    var cur = game.grid[Core.idx(game.w, game.sx, game.sy)];
+    for (var c = 0; c < colorBtns.length; c++) {
+      var isCur = c === cur;
+      colorBtns[c].classList.toggle("current", isCur);
+      colorBtns[c].disabled = isCur || game.status !== "playing";
+    }
+    var left = game.maxSteps - game.steps;
+    stepsNum.textContent = left;
+    stepsNum.classList.toggle("warn", left === 2);
+    stepsNum.classList.toggle("danger", left <= 1);
+    if (animateSteps) {
+      stepsNum.classList.remove("bump");
+      void stepsNum.offsetWidth;
+      stepsNum.classList.add("bump");
+    }
+    stepsCap.textContent = "已用 " + game.steps + " / 上限 " + game.maxSteps + " 步";
+    pipsEl.innerHTML = "";
+    for (var p = 0; p < game.maxSteps; p++) {
+      var pip = document.createElement("div");
+      pip.className = "pip" + (p < game.steps ? " used" : "");
+      pipsEl.appendChild(pip);
+    }
+    targetSwatch.style.setProperty("--tc", PALETTE[game.targetColor].color);
+    targetName.textContent = PALETTE[game.targetColor].name + "色";
+  }
+
+  function updateInfo() {
+    var obs = 0;
+    for (var i = 0; i < level.grid.length; i++) if (level.grid[i] === Core.OBSTACLE) obs++;
+    infoLine.textContent = "難度 " + DIFF_NAMES[difficulty] + " ・ 盤面 " + level.w + "×" + level.h +
+      " ・ 障礙物 " + obs + " 格 ・ 最佳解 " + level.par + " 步";
+  }
+
+  function onColor(c) {
+    if (!game) return;
+    var res = Core.applyMove(game, c);
+    if (!res) return;
+    sndMove(res.absorbed.length > 0);
+    animateMove(res);
+    updatePanel(true);
+    if (res.status !== "playing") {
+      clearTimeout(overlayTimer);
+      overlayTimer = setTimeout(function () { showOverlay(res); }, res.maxD * WAVE + 620);
+    }
+  }
+
+  function animateMove(res) {
+    clearTimeout(cleanupTimer);
+    var cells = res.recolored.concat(res.absorbed);
+    var newColor = PALETTE[res.newColor].color;
+    for (var k = 0; k < cells.length; k++) {
+      var el = cellEls[cells[k].i];
+      var delay = cells[k].d * WAVE;
+      el.classList.remove("enter", "wave");
+      void el.offsetWidth; // 強制重排，讓 wave 動畫可以重新觸發
+      el.style.transitionDelay = delay + "ms";
+      el.style.animationDelay = delay + "ms";
+      el.style.backgroundColor = newColor;
+      el.classList.add("wave");
+    }
+    cleanupTimer = setTimeout(function () {
+      for (var k = 0; k < cells.length; k++) {
+        var el = cellEls[cells[k].i];
+        el.style.transitionDelay = "0ms";
+        el.style.animationDelay = "0ms";
+        el.classList.remove("wave");
+      }
+    }, res.maxD * WAVE + 480);
+    spawnRing(res);
+  }
+
+  function spawnRing(res) {
+    var startEl = cellEls[Core.idx(game.w, game.sx, game.sy)];
+    var wr = boardWrap.getBoundingClientRect();
+    var cr = startEl.getBoundingClientRect();
+    var ring = document.createElement("div");
+    ring.className = "ring";
+    ring.style.left = (cr.left - wr.left + cr.width / 2) + "px";
+    ring.style.top = (cr.top - wr.top + cr.height / 2) + "px";
+    ring.style.borderColor = PALETTE[res.newColor].color;
+    boardWrap.appendChild(ring);
+    var size = (res.maxD + 1.5) * cr.width * 2;
+    var anim = ring.animate(
+      [{ width: "10px", height: "10px", opacity: 0.9 },
+       { width: size + "px", height: size + "px", opacity: 0 }],
+      { duration: res.maxD * WAVE + 380, easing: "cubic-bezier(.25,.6,.3,1)" }
+    );
+    anim.onfinish = function () { ring.remove(); };
+  }
+
+  function showOverlay(res) {
+    card.className = "card " + (res.status === "won" ? "win" : "lose");
+    if (res.status === "won") {
+      cardTitle.textContent = "挑戰成功";
+      cardDesc.textContent = "以 " + game.steps + " 步完成染色（上限 " + game.maxSteps + " 步）";
+      cardPrimary.textContent = "下一關";
+      cardSecondary.textContent = "重玩本關";
+      cardPrimary.onclick = newLevel;
+      cardSecondary.onclick = restart;
+      spawnConfetti();
+      sndWin();
+    } else {
+      cardTitle.textContent = "步數用盡";
+      cardDesc.textContent = "畫布尚未完全染成" + PALETTE[game.targetColor].name + "色，再試一次吧";
+      cardPrimary.textContent = "重試本關";
+      cardSecondary.textContent = "新關卡";
+      cardPrimary.onclick = restart;
+      cardSecondary.onclick = newLevel;
+      sndLose();
+    }
+    overlay.classList.add("show");
+  }
+
+  function hideOverlay() {
+    clearTimeout(overlayTimer);
+    overlay.classList.remove("show");
+  }
+
+  function spawnConfetti() {
+    for (var i = 0; i < 70; i++) {
+      var d = document.createElement("div");
+      d.className = "confetti";
+      d.style.background = PALETTE[(Math.random() * PALETTE.length) | 0].color;
+      document.body.appendChild(d);
+      var ang = Math.random() * Math.PI * 2;
+      var dist = 90 + Math.random() * 320;
+      var dx = Math.cos(ang) * dist;
+      var dy = Math.sin(ang) * dist * 0.7 + 180 + Math.random() * 160;
+      var rot = (Math.random() * 900 - 450) | 0;
+      var anim = d.animate(
+        [{ transform: "translate(0,0) rotate(0deg)", opacity: 1 },
+         { transform: "translate(" + dx + "px,-" + (60 + Math.random() * 120) + "px) rotate(" + (rot / 2) + "deg)", opacity: 1, offset: 0.35 },
+         { transform: "translate(" + (dx * 1.3) + "px," + dy + "px) rotate(" + rot + "deg)", opacity: 0 }],
+        { duration: 1100 + Math.random() * 700, easing: "cubic-bezier(.2,.6,.4,1)" }
+      );
+      anim.onfinish = (function (el) { return function () { el.remove(); }; })(d);
+    }
+  }
+
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.classList.remove("show"); }, 2400);
+  }
+
+  function hint() {
+    if (!game || game.status !== "playing") return;
+    var sol = Core.solve(game.grid, game.w, game.h, game.sx, game.sy, { target: game.targetColor });
+    if (!sol || !sol.moves.length) { toast("目前無法計算提示"); return; }
+    var c = sol.moves[0];
+    var left = game.maxSteps - game.steps;
+    if (sol.steps > left) {
+      toast("剩餘步數已不足以完成（最少還需 " + sol.steps + " 步），建議重新開始");
+      return;
+    }
+    var b = colorBtns[c];
+    b.classList.remove("hint-flash");
+    void b.offsetWidth;
+    b.classList.add("hint-flash");
+    toast("建議下一步：" + PALETTE[c].name + "色（最快 " + sol.steps + " 步完成）");
+  }
+
+  // ---------- 事件 ----------
+  $("restartBtn").addEventListener("click", restart);
+  $("newBtn").addEventListener("click", newLevel);
+  $("hintBtn").addEventListener("click", hint);
+
+  var soundBtn = $("soundBtn");
+  soundBtn.textContent = audioOn ? "🔊" : "🔇";
+  soundBtn.addEventListener("click", function () {
+    audioOn = !audioOn;
+    soundBtn.textContent = audioOn ? "🔊" : "🔇";
+    try { localStorage.setItem("inkflow-sound", audioOn ? "1" : "0"); } catch (e) {}
+    if (audioOn) tone(660, 660, 0.1, "sine", 0.07);
+  });
+
+  var segBtns = document.querySelectorAll("#diffSeg button");
+  segBtns.forEach(function (b) {
+    b.addEventListener("click", function () {
+      if (b.dataset.diff === difficulty) return;
+      difficulty = b.dataset.diff;
+      segBtns.forEach(function (x) { x.classList.toggle("active", x === b); });
+      newLevel();
+    });
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.repeat) return;
+    var k = e.key.toLowerCase();
+    if (k >= "1" && k <= "9") {
+      var c = parseInt(k, 10) - 1;
+      if (level && c < level.colors) onColor(c);
+    } else if (k === "r") restart();
+    else if (k === "n") newLevel();
+    else if (k === "h") hint();
+  });
+
+  // 允許 #easy / #normal / #hard 指定初始難度
+  var hashDiff = location.hash.replace("#", "");
+  if (Core.PRESETS[hashDiff]) {
+    difficulty = hashDiff;
+    segBtns.forEach(function (x) { x.classList.toggle("active", x.dataset.diff === hashDiff); });
+  }
+
+  newLevel();
+
+  // 除錯／自動化測試掛鉤（不影響一般遊玩）
+  window.__inkflow = {
+    get game() { return game; },
+    get level() { return level; },
+    onColor: onColor, newLevel: newLevel, restart: restart, hint: hint
+  };
+
+  // 視覺驗證用掛鉤（headless 截圖）
+  if (location.hash === "#winshot") {
+    setTimeout(function () { game.status = "won"; updatePanel(false); showOverlay({ status: "won" }); }, 300);
+  }
+  if (location.hash === "#loseshot") {
+    setTimeout(function () { game.status = "lost"; updatePanel(false); showOverlay({ status: "lost" }); }, 300);
+  }
+  if (location.hash === "#waveshot") {
+    setTimeout(function () { onColor(level.solution[0]); }, 250);
+  }
+
+  // 以 #autotest 開啟頁面時自動打完整關並輸出結果（headless 驗證用）
+  if (location.hash === "#autotest") {
+    var results = [];
+    function assert(name, cond) { results.push((cond ? "PASS " : "FAIL ") + name); }
+    var queue = [];
+    function later(ms, fn) { queue.push([ms, fn]); }
+    function run() {
+      if (!queue.length) return finish();
+      var job = queue.shift();
+      setTimeout(function () { job[1](); run(); }, job[0]);
+    }
+    function finish() {
+      var fail = results.some(function (r) { return r.indexOf("FAIL") === 0; });
+      var pre = document.createElement("pre");
+      pre.id = "testlog";
+      pre.style.display = "none";
+      pre.textContent = results.join("\n");
+      document.body.appendChild(pre);
+      document.title = fail ? "TEST:FAIL" : "TEST:PASS";
+    }
+    later(100, function () {
+      hint();
+      assert("提示後 toast 顯示", toastEl.classList.contains("show"));
+    });
+    later(200, function () {
+      var wrong = (level.solution[0] + 1) % level.colors;
+      var cur = game.grid[Core.idx(game.w, game.sx, game.sy)];
+      if (wrong === cur) wrong = (wrong + 1) % level.colors;
+      onColor(wrong);
+      assert("下一手後步數=1", game.steps === 1);
+    });
+    later(200, function () {
+      restart();
+      assert("重試後步數歸零", game.steps === 0 && game.status === "playing");
+    });
+    later(200, function () {
+      var moves = level.solution.slice();
+      moves.forEach(function (mv, i) { later(120, function () { onColor(mv); }); });
+      later(1600, function () {
+        assert("照官方解打完 → 勝利", game.status === "won");
+        assert("步數 = 上限", game.steps === game.maxSteps);
+        var allTarget = true;
+        for (var i = 0; i < game.grid.length; i++) {
+          if (game.grid[i] !== Core.OBSTACLE && game.grid[i] !== game.targetColor) allTarget = false;
+        }
+        assert("全圖非障礙格 = 目標色", allTarget);
+        assert("勝利結算顯示", overlay.classList.contains("show") && card.className.indexOf("win") >= 0);
+      });
+      later(100, function () {
+        newLevel();
+        assert("新關卡後狀態重置", game.steps === 0 && game.status === "playing" && !overlay.classList.contains("show"));
+      });
+      later(100, function () {
+        // 亂打直到步數用盡（或碰巧獲勝），驗證結算會出現
+        var guard = 0;
+        while (game.status === "playing" && guard++ < 30) {
+          var cur = game.grid[Core.idx(game.w, game.sx, game.sy)];
+          onColor((cur + 1) % level.colors);
+        }
+        assert("步數用盡後遊戲結束", game.status !== "playing");
+        assert("結束後按鈕全部停用", colorBtns.every(function (b) { return b.disabled; }));
+      });
+      later(1600, function () {
+        assert("結算畫面顯示", overlay.classList.contains("show"));
+      });
+    });
+    run();
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,7 +1,11 @@
 /*
- * Inkflow 溢彩畫 — 核心遊戲邏輯
+ * InkFlow 墨染天青 — 核心遊戲邏輯
  * UMD：瀏覽器掛在 window.InkflowCore，Node 走 module.exports（供自動化測試）。
  * 格子顏色以 0..k-1 的整數表示，-1 代表障礙物。
+ *
+ * 玩法（自由染色版）：沒有固定起點。每一步先選一個新顏色，再點畫布上任一格；
+ * 被點格所屬的同色連通區塊整塊變成新色，並向外連鎖吞併相鄰的同新色格子。
+ * 目標＝在步數上限內把所有非障礙格都染成目標色。
  */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory();
@@ -33,7 +37,7 @@
     return arr;
   }
 
-  /** 從起點 BFS 找出同色相連區塊（主區塊），回傳格子索引陣列 */
+  /** 從 (sx,sy) BFS 找出同色相連區塊，回傳格子索引陣列 */
   function floodZone(grid, w, h, sx, sy) {
     var start = idx(w, sx, sy);
     var color = grid[start];
@@ -55,7 +59,7 @@
     return queue;
   }
 
-  /** 起點可達的非障礙格數（用來確認地圖沒有被障礙物切斷） */
+  /** (sx,sy) 可達的非障礙格數（工具函式；自由染色玩法已不再需要地圖連通） */
   function reachableNormals(grid, w, h, sx, sy) {
     var start = idx(w, sx, sy);
     if (grid[start] === OBSTACLE) return 0;
@@ -77,12 +81,8 @@
   }
 
   function createGame(level) {
-    if (level.grid[idx(level.w, level.sx, level.sy)] === OBSTACLE) {
-      throw new Error("start point must not be an obstacle");
-    }
     return {
       w: level.w, h: level.h,
-      sx: level.sx, sy: level.sy,
       grid: level.grid.slice(),
       targetColor: level.targetColor,
       maxSteps: level.maxSteps,
@@ -100,23 +100,25 @@
   }
 
   /**
-   * 玩家選擇新顏色時的核心流程：
-   * 1. 合法性檢查（遊戲進行中、非當前顏色）
-   * 2. 泛洪找主區塊 → 全部改成新顏色
-   * 3. 由主區塊邊緣向外吞併所有相鄰的同新色格子（連鎖）
+   * 玩家「選新顏色 + 點某一格 (cx,cy)」時的核心流程：
+   * 1. 合法性檢查（遊戲進行中、顏色合法、點到的是非障礙格、且不是原色）
+   * 2. 泛洪找出被點格的同色區塊 → 全部改成新顏色
+   * 3. 由該區塊邊緣向外吞併所有相鄰的同新色格子（連鎖）
    * 4. 步數 +1，判定勝負（勝利優先於步數用盡）
-   * 回傳動畫所需資料；非法操作回傳 null 且不改動任何狀態。
+   * 回傳動畫所需資料（波紋距離自被點格算起）；非法操作回傳 null 且不改動任何狀態。
    */
-  function applyMove(state, newColor) {
+  function applyMove(state, newColor, cx, cy) {
     if (state.status !== "playing") return null;
     if (newColor == null || newColor < 0 || newColor >= state.colors) return null;
     var w = state.w, h = state.h, g = state.grid;
-    var startIdx = idx(w, state.sx, state.sy);
+    if (cx == null || cy == null || cx < 0 || cy < 0 || cx >= w || cy >= h) return null;
+    var startIdx = idx(w, cx, cy);
     var oldColor = g[startIdx];
+    if (oldColor === OBSTACLE) return null;
     if (newColor === oldColor) return null;
 
-    // Step 2: 主區塊
-    var zone = floodZone(g, w, h, state.sx, state.sy);
+    // Step 2: 被點格的同色區塊
+    var zone = floodZone(g, w, h, cx, cy);
     var inZone = new Uint8Array(w * h);
     for (var z = 0; z < zone.length; z++) inZone[zone[z]] = 1;
 
@@ -127,9 +129,9 @@
     var queue = zone.slice();
     var absorbed = [];
     for (var qi = 0; qi < queue.length; qi++) {
-      var cur = queue[qi], cx = cur % w, cy = (cur / w) | 0;
+      var cur = queue[qi], ccx = cur % w, ccy = (cur / w) | 0;
       for (var d = 0; d < 4; d++) {
-        var nx = cx + DIRS[d][0], ny = cy + DIRS[d][1];
+        var nx = ccx + DIRS[d][0], ny = ccy + DIRS[d][1];
         if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
         var ni = idx(w, nx, ny);
         if (inZone[ni] || g[ni] !== newColor) continue;
@@ -139,14 +141,14 @@
       }
     }
 
-    // 波紋動畫用：起點沿「最終主區塊」的 BFS 距離（自然繞過障礙物）
+    // 波紋動畫用：自被點格沿「最終區塊」的 BFS 距離（自然繞過障礙物）
     var dist = new Int16Array(w * h).fill(-1);
     dist[startIdx] = 0;
     var dq = [startIdx];
     for (qi = 0; qi < dq.length; qi++) {
-      cur = dq[qi]; cx = cur % w; cy = (cur / w) | 0;
+      cur = dq[qi]; var dcx = cur % w, dcy = (cur / w) | 0;
       for (d = 0; d < 4; d++) {
-        nx = cx + DIRS[d][0]; ny = cy + DIRS[d][1];
+        nx = dcx + DIRS[d][0]; ny = dcy + DIRS[d][1];
         if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
         ni = idx(w, nx, ny);
         if (!inZone[ni] || dist[ni] >= 0) continue;
@@ -172,6 +174,7 @@
     return {
       oldColor: oldColor,
       newColor: newColor,
+      cx: cx, cy: cy,
       recolored: recolored,
       absorbed: absorbedOut,
       zoneSize: zone.length + absorbed.length,
@@ -202,7 +205,7 @@
           queue.push(ni);
         }
       }
-      regions.push({ id: id, color: color, size: queue.length });
+      regions.push({ id: id, color: color, size: queue.length, cell: i });
     }
     var adj = regions.map(function () { return new Set(); });
     for (var y = 0; y < h; y++) {
@@ -223,104 +226,111 @@
   }
 
   /**
-   * 最佳解求解器：在區域圖上以 BFS 搜尋最少步數把「起點可達的所有區域」
-   * 併成單一顏色。狀態＝已吞併區域的 bitmask（BigInt）。
-   * opts.target 指定最終顏色時，允許「先併成別的顏色、再花一步整體改色」，
-   * 因為把主區塊重新染色不需要吞併任何格子。
-   * 回傳 { steps, moves }（moves 為顏色序列），無解或超出預算回傳 null。
+   * 自由染色版求解器（beam search）：先把盤面壓成「區域圖」（同色相連塊為節點、
+   * 異色相鄰為邊），之後在這張小圖上做定寬束搜尋，找一條把整盤染成目標色
+   * （opts.target；未指定時求「染成單一同色」）的短路徑。狀態＝各初始區域當前顏色
+   * 的陣列；一步＝挑一個「當前同色連通塊」整塊改成某色（＝遊戲裡點一格的效果）。
+   *
+   * 為什麼用 beam 而非窮舉最佳解：自由染色的最少步數在數學上是 NP-hard，12×12／5 色
+   * 的嚴格最佳解證明會爆炸（實測數秒起跳）。beam 永遠回傳一條「可實際重播獲勝」的解，
+   * 執行時間有界，且盤面小時仍會找到真正的最佳解；代價是大盤上步數可能比理論最佳多 1–2 步
+   * （對玩家而言只是多一點餘裕，仍是緊湊謎題）。
+   *
+   * 剪枝：每步只把某連通塊改成「它相鄰塊的顏色」或「目標色」；相同盤面著色只展開一次；
+   * 每層依啟發分數（尚未達標的顏色種數 → 尚未達標的格子數）只保留最好的 width 個狀態。
+   *
+   * 回傳 { steps, moves }，moves 為 [{ color, x, y }]（x,y＝該步要點的代表格）；
+   * 在 cap 層內找不到解回傳 null（產生器用來汰除過難的盤）。
    */
-  function solve(grid, w, h, sx, sy, opts) {
+  function solve(grid, w, h, opts) {
     opts = opts || {};
-    var cap = opts.cap || 24;
-    var budget = opts.budget || 300000;
     var target = opts.target != null ? opts.target : null;
+    var cap = opts.cap || 30;
+    var width = opts.width || 400;
+
     var R = buildRegions(grid, w, h);
     var n = R.regions.length;
-    var startRegion = R.regionId[idx(w, sx, sy)];
-    if (startRegion < 0 || n === 0) return null;
+    if (n === 0) return { steps: 0, moves: [] };
+    var rCell = R.regions.map(function (r) { return r.cell; });
+    var rSize = R.regions.map(function (r) { return r.size; });
+    var radj = R.adj.map(function (s) { return Array.from(s); });
 
-    var bit = [];
-    for (var i = 0; i < n; i++) bit.push(1n << BigInt(i));
-    var full = (1n << BigInt(n)) - 1n;
-    var adjMask = [];
-    for (i = 0; i < n; i++) {
-      var m = 0n;
-      R.adj[i].forEach(function (j) { m |= bit[j]; });
-      adjMask.push(m);
-    }
-    var colorOf = R.regions.map(function (r) { return r.color; });
-
-    var startMask = bit[startRegion];
-    if (startMask === full) {
-      if (target == null || colorOf[startRegion] === target) return { steps: 0, moves: [] };
-      return { steps: 1, moves: [target] }; // 全圖同色但非目標色：整體改色一步
-    }
-
-    var seen = new Map(); // BigInt mask -> { prev, color }
-    seen.set(startMask, null);
-    var frontier = [startMask];
-    var explored = 0;
-
-    function rebuild(mask) {
-      var moves = [];
-      var node = seen.get(mask);
-      while (node) {
-        moves.push(node.color);
-        node = seen.get(node.prev);
+    function goal(cols) {
+      if (target != null) {
+        for (var i = 0; i < n; i++) if (cols[i] !== target) return false;
+        return true;
       }
-      moves.reverse();
-      return moves;
+      var c = cols[0];
+      for (var j = 1; j < n; j++) if (cols[j] !== c) return false;
+      return true;
+    }
+    // 啟發分數（越小越好）：先比尚未達標的顏色種數，再比尚未達標的格子總數
+    function score(cols) {
+      var set = {}, cells = 0;
+      for (var i = 0; i < n; i++) {
+        var v = cols[i];
+        if (target != null) { if (v !== target) { set[v] = 1; cells += rSize[i]; } }
+        else set[v] = 1;
+      }
+      var k = Object.keys(set).length;
+      return target != null ? (k * 100000 + cells) : ((k - 1) * 100000);
     }
 
-    var fullAnyMask = null; // 已併成單一「非目標」顏色的最淺狀態（可再 +1 步改色）
-    for (var depth = 1; depth <= cap; depth++) {
-      var next = [];
-      for (var f = 0; f < frontier.length; f++) {
-        var mask = frontier[f];
-        var nbr = 0n;
-        for (i = 0; i < n; i++) {
-          if (mask & bit[i]) nbr |= adjMask[i];
-        }
-        nbr &= ~mask;
-        if (nbr === 0n) continue; // 被障礙物隔開，永遠到不了 full
-        var groups = new Map(); // color -> mask of neighbor regions
-        for (i = 0; i < n; i++) {
-          if (nbr & bit[i]) {
-            var c = colorOf[i];
-            groups.set(c, (groups.get(c) || 0n) | bit[i]);
+    var start = R.regions.map(function (r) { return r.color; });
+    if (goal(start)) return { steps: 0, moves: [] };
+
+    var seen = new Set();
+    seen.add(start.join(","));
+    var beam = [{ cols: start, moves: [] }];
+
+    for (var depth = 1; depth <= cap && beam.length; depth++) {
+      var cand = [];
+      for (var bi = 0; bi < beam.length; bi++) {
+        var cols = beam[bi].cols, prevMoves = beam[bi].moves;
+        var comp = new Int32Array(n).fill(-1); // 當前同色連通塊分群
+        for (var i = 0; i < n; i++) {
+          if (comp[i] >= 0) continue;
+          comp[i] = i;
+          var stack = [i], members = [i];
+          while (stack.length) {
+            var u = stack.pop(), au = radj[u];
+            for (var a = 0; a < au.length; a++) {
+              var v = au[a];
+              if (comp[v] < 0 && cols[v] === cols[u]) { comp[v] = i; stack.push(v); members.push(v); }
+            }
+          }
+          var col = cols[i];
+          var cset = {};
+          if (target != null && target !== col) cset[target] = 1;
+          for (var m = 0; m < members.length; m++) {
+            var amm = radj[members[m]];
+            for (var b = 0; b < amm.length; b++) if (cols[amm[b]] !== col) cset[cols[amm[b]]] = 1;
+          }
+          for (var cKey in cset) {
+            var c = +cKey;
+            var ncols = cols.slice();
+            for (m = 0; m < members.length; m++) ncols[members[m]] = c;
+            var key = ncols.join(",");
+            if (seen.has(key)) continue;
+            seen.add(key);
+            var move = { color: c, x: rCell[i] % w, y: (rCell[i] / w) | 0 };
+            if (goal(ncols)) return { steps: depth, moves: prevMoves.concat([move]) };
+            cand.push({ cols: ncols, moves: prevMoves.concat([move]), s: score(ncols) });
           }
         }
-        var done = null;
-        groups.forEach(function (gm, c) {
-          if (done) return;
-          var nm = mask | gm;
-          if (seen.has(nm)) return;
-          seen.set(nm, { prev: mask, color: c });
-          explored++;
-          if (nm === full) {
-            if (target == null || c === target) done = nm;
-            else if (fullAnyMask === null) fullAnyMask = nm; // 深度同層先記著，也許同層還有直達目標色的解
-            return;
-          }
-          next.push(nm);
-        });
-        if (done) return { steps: depth, moves: rebuild(done) };
-        if (explored > budget) return null;
       }
-      // 這一層沒有以目標色收尾的解，但有併成他色的解 → 再補一步整體改色
-      if (fullAnyMask !== null) {
-        return { steps: depth + 1, moves: rebuild(fullAnyMask).concat([target]) };
-      }
-      frontier = next;
-      if (!frontier.length) break;
+      cand.sort(function (a, b) { return a.s - b.s; });
+      if (cand.length > width) cand.length = width;
+      beam = cand;
     }
     return null;
   }
 
   /**
-   * 關卡產生器：隨機放障礙物（保持連通）→ 種子擴散長出大片色塊 →
-   * 用求解器求出最佳步數，落在 [parMin, parMax] 才採用；
-   * 目標顏色＝最佳解最後一手，步數上限＝最佳步數（跟原作一樣是緊湊的 par）。
+   * 關卡產生器：隨機放障礙物 → 種子擴散長出大片色塊 → 選一個目標色，
+   * 用求解器求出最佳步數，落在 [parMin, parMax] 才採用。
+   * 自由染色玩法下任何盤面都必然可解（最壞情況逐塊染成目標色），
+   * 因此不再需要「起點連通」檢查；步數上限＝求解器算出的最佳步數（緊湊 par）。
    */
   function generateLevel(opts) {
     var w = opts.w, h = opts.h, colors = opts.colors;
@@ -330,33 +340,30 @@
     var obstacleMax = opts.obstacleMax != null ? opts.obstacleMax : obstacleMin;
     var parMin = opts.parMin || 3, parMax = opts.parMax || 10;
     var blobSize = opts.blobSize || 6;
-    var sx = opts.sx != null ? opts.sx : (w >> 1);
-    var sy = opts.sy != null ? opts.sy : (h >> 1);
+    var width = opts.width || 200; // beam 寬度：實測對三種難度都能兼顧速度與 par 分佈
+    var solveCap = opts.solveCap || parMax; // 只收 par ≤ parMax 的盤
+    var targetTries = opts.targetTries || 3;
     var fallback = null;
     var parMid = (parMin + parMax) / 2;
 
     for (var attempt = 0; attempt < attempts; attempt++) {
       var grid = new Array(w * h).fill(-2); // -2 = 尚未指定顏色
 
-      // 障礙物（不能蓋在起點上）
+      // 障礙物
       var obsCount = obstacleMin + ((rng() * (obstacleMax - obstacleMin + 1)) | 0);
       var placed = 0, guard = 0;
       while (placed < obsCount && guard++ < 1000) {
-        var ox = (rng() * w) | 0, oy = (rng() * h) | 0;
-        var oi = idx(w, ox, oy);
-        if ((ox === sx && oy === sy) || grid[oi] === OBSTACLE) continue;
+        var oi = (rng() * w * h) | 0;
+        if (grid[oi] === OBSTACLE) continue;
         grid[oi] = OBSTACLE;
         placed++;
       }
 
-      // 所有非障礙格必須與起點連通，否則永遠無法通關
-      var normalCount = 0;
-      for (var i = 0; i < grid.length; i++) if (grid[i] !== OBSTACLE) normalCount++;
-      if (reachableNormals(grid, w, h, sx, sy) !== normalCount) continue;
-
       // 種子擴散：前 colors 顆種子保證每種顏色都出現，其餘隨機
       var normalCells = [];
-      for (i = 0; i < grid.length; i++) if (grid[i] !== OBSTACLE) normalCells.push(i);
+      for (var i = 0; i < grid.length; i++) if (grid[i] !== OBSTACLE) normalCells.push(i);
+      if (!normalCells.length) continue;
+      var normalCount = normalCells.length;
       shuffle(normalCells, rng);
       var seedCount = Math.min(normalCells.length, Math.max(colors + 1, Math.round(normalCount / blobSize)));
       var frontier = [];
@@ -383,20 +390,29 @@
         grid[nb] = grid[cur];
         frontier.push(nb);
       }
+      // 被障礙包圍、擴散沒填到的孤格隨機補色
+      for (i = 0; i < grid.length; i++) if (grid[i] === -2) grid[i] = (rng() * colors) | 0;
 
-      var sol = solve(grid, w, h, sx, sy, { cap: parMax + 4, budget: opts.budget || 250000 });
-      if (!sol || sol.steps === 0) continue;
-      var level = {
-        w: w, h: h, sx: sx, sy: sy,
-        grid: grid.slice(),
-        colors: colors,
-        targetColor: sol.moves[sol.moves.length - 1],
-        maxSteps: sol.steps,
-        par: sol.steps,
-        solution: sol.moves.slice()
-      };
-      if (sol.steps >= parMin && sol.steps <= parMax) return level;
-      if (!fallback || Math.abs(sol.steps - parMid) < Math.abs(fallback.par - parMid)) fallback = level;
+      // 依序試幾個目標色，求最佳步數
+      var cand = [];
+      for (var c = 0; c < colors; c++) cand.push(c);
+      shuffle(cand, rng);
+      for (var ti = 0; ti < cand.length && ti < targetTries; ti++) {
+        var target = cand[ti];
+        var sol = solve(grid, w, h, { target: target, cap: solveCap, width: width });
+        if (!sol || sol.steps === 0) continue;
+        var level = {
+          w: w, h: h,
+          grid: grid.slice(),
+          colors: colors,
+          targetColor: target,
+          maxSteps: sol.steps,
+          par: sol.steps,
+          solution: sol.moves.slice()
+        };
+        if (sol.steps >= parMin && sol.steps <= parMax) return level;
+        if (!fallback || Math.abs(sol.steps - parMid) < Math.abs(fallback.par - parMid)) fallback = level;
+      }
     }
     return fallback;
   }
@@ -405,7 +421,7 @@
   var PRESETS = {
     easy:   { w: 8,  h: 8,  colors: 4, obstacleMin: 0, obstacleMax: 3,  parMin: 3, parMax: 5, blobSize: 6 },
     normal: { w: 10, h: 10, colors: 4, obstacleMin: 3, obstacleMax: 7,  parMin: 4, parMax: 6, blobSize: 4 },
-    hard:   { w: 12, h: 12, colors: 5, obstacleMin: 6, obstacleMax: 12, parMin: 6, parMax: 8, blobSize: 3.5 }
+    hard:   { w: 12, h: 12, colors: 5, obstacleMin: 6, obstacleMax: 12, parMin: 6, parMax: 8, blobSize: 4.5, width: 120 }
   };
 
   return {

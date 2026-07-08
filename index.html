@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>溢彩畫 · Inkflow</title>
+<title>墨染天青 · InkFlow</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -47,6 +47,15 @@
   .cell.enter { animation: cellIn .3s ease-out both; }
   @keyframes cellIn { from { transform: scale(.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
+  /* 自由選格：可點的格子給游標提示，hover 預覽會被染到的整塊區域 */
+  .board.playable .cell:not(.obstacle) { cursor: pointer; }
+  .cell.preview { box-shadow: inset 0 0 0 2px rgba(255,255,255,.85), 0 0 10px rgba(255,255,255,.22); z-index: 1; }
+  .cell.hint-cell { animation: hintCell .8s ease 2; z-index: 4; }
+  @keyframes hintCell {
+    0%,100% { box-shadow: inset 0 0 0 1px rgba(255,255,255,.05); }
+    50%     { box-shadow: 0 0 0 3px #fff, 0 0 16px #fff; }
+  }
+
   .cell.obstacle { background: #171923; box-shadow: inset 0 0 0 1px #2a2e3c; }
   .cell.obstacle::before, .cell.obstacle::after {
     content: ""; position: absolute; left: 22%; right: 22%;
@@ -54,12 +63,6 @@
   }
   .cell.obstacle::before { transform: rotate(45deg); }
   .cell.obstacle::after  { transform: rotate(-45deg); }
-
-  .marker { position: absolute; inset: 8%; pointer-events: none; z-index: 2;
-            animation: markerPulse 2s ease-in-out infinite;
-            filter: drop-shadow(0 0 5px rgba(255,255,255,.9)); }
-  .marker svg { width: 100%; height: 100%; display: block; }
-  @keyframes markerPulse { 0%,100% { transform: scale(1); opacity: .85; } 50% { transform: scale(1.14); opacity: 1; } }
 
   .ring { position: absolute; width: 10px; height: 10px; border: 2px solid #fff;
           border-radius: 50%; transform: translate(-50%, -50%);
@@ -186,8 +189,8 @@
 <body>
 <div class="app">
   <header>
-    <h1>溢彩畫<span class="en">INKFLOW</span></h1>
-    <span class="sub">從中心擴散，將整個畫布染成目標顏色</span>
+    <h1>墨染天青<span class="en">INKFLOW</span></h1>
+    <span class="sub">先選一種顏色，再點畫布任一格，把整個畫布染成目標顏色</span>
   </header>
   <main>
     <div>
@@ -228,7 +231,7 @@
           <button data-diff="hard">困難</button>
         </div>
       </div>
-      <div class="help">鍵盤：1–5 選色 ・ H 提示<br>R 重新開始 ・ N 新關卡</div>
+      <div class="help">先選色，再點畫布上的格子上色<br>鍵盤 1–5 選色 ・ H 提示 ・ R 重來 ・ N 新關卡</div>
     </aside>
   </main>
 </div>
@@ -261,12 +264,6 @@
   ];
   var DIFF_NAMES = { easy: "簡單", normal: "普通", hard: "困難" };
 
-  var MARKER_SVG =
-    '<svg viewBox="0 0 24 24" fill="none">' +
-    '<path d="M4 8V6a2 2 0 0 1 2-2h2 M16 4h2a2 2 0 0 1 2 2v2 M20 16v2a2 2 0 0 1-2 2h-2 M8 20H6a2 2 0 0 1-2-2v-2"' +
-    ' stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>' +
-    '<circle cx="12" cy="12" r="2.6" fill="#fff"/></svg>';
-
   var $ = function (id) { return document.getElementById(id); };
   var boardEl = $("board"), boardWrap = $("boardWrap"), infoLine = $("infoLine");
   var colorsEl = $("colors"), stepsNum = $("stepsNum"), stepsCap = $("stepsCap"), pipsEl = $("pips");
@@ -277,7 +274,8 @@
 
   var difficulty = "normal";
   var level = null, game = null;
-  var cellEls = [], colorBtns = [];
+  var armedColor = 0;              // 目前選中的顏色（先選色，再點格上色）
+  var cellEls = [], colorBtns = [], previewEls = [];
   var cleanupTimer = null, overlayTimer = null, toastTimer = null;
 
   // ---------- 音效（WebAudio 合成，無需外部檔案） ----------
@@ -316,6 +314,7 @@
     var preset = Object.assign({}, Core.PRESETS[difficulty]);
     level = Core.generateLevel(preset) || Core.generateLevel(Object.assign(preset, { attempts: 300 }));
     game = Core.createGame(level);
+    armedColor = 0;
     buildBoard(true);
     buildColorButtons();
     updatePanel(false);
@@ -325,6 +324,7 @@
 
   function restart() {
     game = Core.createGame(level);
+    armedColor = 0;
     buildBoard(true);
     updatePanel(false);
     hideOverlay();
@@ -332,9 +332,12 @@
 
   function buildBoard(entrance) {
     clearTimeout(cleanupTimer);
+    previewEls = [];
     boardEl.innerHTML = "";
+    boardEl.classList.add("playable");
     boardEl.style.gridTemplateColumns = "repeat(" + level.w + ", 1fr)";
     cellEls = [];
+    var cx0 = (level.w - 1) / 2, cy0 = (level.h - 1) / 2; // 入場動畫由畫布中心向外
     for (var i = 0; i < level.w * level.h; i++) {
       var el = document.createElement("div");
       el.className = "cell";
@@ -346,22 +349,21 @@
         el.style.backgroundColor = PALETTE[v].color;
       }
       if (entrance) {
-        el.style.animationDelay = ((Math.abs(x - level.sx) + Math.abs(y - level.sy)) * 16) + "ms";
+        el.style.animationDelay = ((Math.abs(x - cx0) + Math.abs(y - cy0)) * 16) + "ms";
         el.classList.add("enter");
         el.addEventListener("animationend", function () {
           this.classList.remove("enter");
           this.style.animationDelay = "0ms";
         }, { once: true });
       }
-      if (x === level.sx && y === level.sy) {
-        var m = document.createElement("div");
-        m.className = "marker";
-        m.innerHTML = MARKER_SVG;
-        el.appendChild(m);
-      }
+      (function (x, y) {
+        el.addEventListener("click", function () { cellClick(x, y); });
+        el.addEventListener("pointerenter", function () { setPreview(x, y); });
+      })(x, y);
       boardEl.appendChild(el);
       cellEls.push(el);
     }
+    boardEl.onpointerleave = clearPreview;
   }
 
   function buildColorButtons() {
@@ -374,8 +376,8 @@
         b.style.setProperty("--c", PALETTE[c].color);
         b.innerHTML =
           '<span class="swatch"></span><span class="cname">' + PALETTE[c].name + "</span>" +
-          '<span class="right"><span class="badge">目前</span><kbd>' + (c + 1) + "</kbd></span>";
-        b.addEventListener("click", function () { onColor(c); });
+          '<span class="right"><span class="badge">選中</span><kbd>' + (c + 1) + "</kbd></span>";
+        b.addEventListener("click", function () { armColor(c); });
         colorsEl.appendChild(b);
         colorBtns.push(b);
       })(c);
@@ -383,11 +385,10 @@
   }
 
   function updatePanel(animateSteps) {
-    var cur = game.grid[Core.idx(game.w, game.sx, game.sy)];
+    var playing = game.status === "playing";
     for (var c = 0; c < colorBtns.length; c++) {
-      var isCur = c === cur;
-      colorBtns[c].classList.toggle("current", isCur);
-      colorBtns[c].disabled = isCur || game.status !== "playing";
+      colorBtns[c].classList.toggle("current", c === armedColor); // 標出「選中」的顏色
+      colorBtns[c].disabled = !playing;
     }
     var left = game.maxSteps - game.steps;
     stepsNum.textContent = left;
@@ -416,10 +417,25 @@
       " ・ 障礙物 " + obs + " 格 ・ 最佳解 " + level.par + " 步";
   }
 
-  function onColor(c) {
-    if (!game) return;
-    var res = Core.applyMove(game, c);
-    if (!res) return;
+  // 先選色：只更新「選中」的顏色，不動盤面
+  function armColor(c) {
+    if (!level || c < 0 || c >= level.colors) return;
+    armedColor = c;
+    for (var i = 0; i < colorBtns.length; i++) colorBtns[i].classList.toggle("current", i === armedColor);
+  }
+
+  // 點格：用選中的顏色染被點格所屬的區塊
+  function cellClick(x, y) {
+    if (!game || game.status !== "playing") return;
+    doMove(armedColor, x, y);
+  }
+
+  // 實際套用一步（供點擊、提示重播、自動化測試共用）
+  function doMove(color, x, y) {
+    if (!game) return null;
+    var res = Core.applyMove(game, color, x, y);
+    if (!res) return null; // 非法：點到障礙、選到同色、或越界
+    clearPreview();
     sndMove(res.absorbed.length > 0);
     animateMove(res);
     updatePanel(true);
@@ -427,6 +443,31 @@
       clearTimeout(overlayTimer);
       overlayTimer = setTimeout(function () { showOverlay(res); }, res.maxD * WAVE + 620);
     }
+    return res;
+  }
+
+  // hover 預覽：把被點格所屬的同色區塊描邊，讓玩家看清會染到哪些格
+  function setPreview(x, y) {
+    if (!game || game.status !== "playing") return;
+    clearPreview();
+    if (game.grid[Core.idx(game.w, x, y)] === Core.OBSTACLE) return;
+    var zone = Core.floodZone(game.grid, game.w, game.h, x, y);
+    for (var k = 0; k < zone.length; k++) {
+      var el = cellEls[zone[k]];
+      if (el) { el.classList.add("preview"); previewEls.push(el); }
+    }
+  }
+  function clearPreview() {
+    for (var k = 0; k < previewEls.length; k++) previewEls[k].classList.remove("preview");
+    previewEls = [];
+  }
+  function pulseCell(x, y) {
+    var el = cellEls[Core.idx(game.w, x, y)];
+    if (!el) return;
+    el.classList.remove("hint-cell");
+    void el.offsetWidth;
+    el.classList.add("hint-cell");
+    setTimeout(function () { el.classList.remove("hint-cell"); }, 1700);
   }
 
   function animateMove(res) {
@@ -455,7 +496,7 @@
   }
 
   function spawnRing(res) {
-    var startEl = cellEls[Core.idx(game.w, game.sx, game.sy)];
+    var startEl = cellEls[Core.idx(game.w, res.cx, res.cy)]; // 波紋自被點格擴散
     var wr = boardWrap.getBoundingClientRect();
     var cr = startEl.getBoundingClientRect();
     var ring = document.createElement("div");
@@ -531,19 +572,21 @@
 
   function hint() {
     if (!game || game.status !== "playing") return;
-    var sol = Core.solve(game.grid, game.w, game.h, game.sx, game.sy, { target: game.targetColor });
+    var sol = Core.solve(game.grid, game.w, game.h, { target: game.targetColor });
     if (!sol || !sol.moves.length) { toast("目前無法計算提示"); return; }
-    var c = sol.moves[0];
+    var mv = sol.moves[0];
     var left = game.maxSteps - game.steps;
     if (sol.steps > left) {
       toast("剩餘步數已不足以完成（最少還需 " + sol.steps + " 步），建議重新開始");
       return;
     }
-    var b = colorBtns[c];
+    armColor(mv.color);        // 幫玩家選好建議的顏色
+    var b = colorBtns[mv.color];
     b.classList.remove("hint-flash");
     void b.offsetWidth;
     b.classList.add("hint-flash");
-    toast("建議下一步：" + PALETTE[c].name + "色（最快 " + sol.steps + " 步完成）");
+    pulseCell(mv.x, mv.y);     // 在盤面標出建議要點的格子
+    toast("建議：選" + PALETTE[mv.color].name + "色，點閃爍的格子（最快 " + sol.steps + " 步完成）");
   }
 
   // ---------- 事件 ----------
@@ -575,7 +618,7 @@
     var k = e.key.toLowerCase();
     if (k >= "1" && k <= "9") {
       var c = parseInt(k, 10) - 1;
-      if (level && c < level.colors) onColor(c);
+      if (level && c < level.colors) armColor(c);
     } else if (k === "r") restart();
     else if (k === "n") newLevel();
     else if (k === "h") hint();
@@ -594,7 +637,8 @@
   window.__inkflow = {
     get game() { return game; },
     get level() { return level; },
-    onColor: onColor, newLevel: newLevel, restart: restart, hint: hint
+    get armed() { return armedColor; },
+    armColor: armColor, doMove: doMove, newLevel: newLevel, restart: restart, hint: hint
   };
 
   // 視覺驗證用掛鉤（headless 截圖）
@@ -605,7 +649,7 @@
     setTimeout(function () { game.status = "lost"; updatePanel(false); showOverlay({ status: "lost" }); }, 300);
   }
   if (location.hash === "#waveshot") {
-    setTimeout(function () { onColor(level.solution[0]); }, 250);
+    setTimeout(function () { var m = level.solution[0]; doMove(m.color, m.x, m.y); }, 250);
   }
 
   // 以 #autotest 開啟頁面時自動打完整關並輸出結果（headless 驗證用）
@@ -633,10 +677,10 @@
       assert("提示後 toast 顯示", toastEl.classList.contains("show"));
     });
     later(200, function () {
-      var wrong = (level.solution[0] + 1) % level.colors;
-      var cur = game.grid[Core.idx(game.w, game.sx, game.sy)];
-      if (wrong === cur) wrong = (wrong + 1) % level.colors;
-      onColor(wrong);
+      var mv = level.solution[0];
+      var cur = game.grid[Core.idx(game.w, mv.x, mv.y)];
+      var wrong = (cur + 1) % level.colors; // 與被點格不同色，保證是合法一手
+      doMove(wrong, mv.x, mv.y);
       assert("下一手後步數=1", game.steps === 1);
     });
     later(200, function () {
@@ -645,7 +689,7 @@
     });
     later(200, function () {
       var moves = level.solution.slice();
-      moves.forEach(function (mv, i) { later(120, function () { onColor(mv); }); });
+      moves.forEach(function (mv) { later(120, function () { doMove(mv.color, mv.x, mv.y); }); });
       later(1600, function () {
         assert("照官方解打完 → 勝利", game.status === "won");
         assert("步數 = 上限", game.steps === game.maxSteps);
@@ -661,11 +705,13 @@
         assert("新關卡後狀態重置", game.steps === 0 && game.status === "playing" && !overlay.classList.contains("show"));
       });
       later(100, function () {
-        // 亂打直到步數用盡（或碰巧獲勝），驗證結算會出現
+        // 亂點格子直到步數用盡（或碰巧獲勝），驗證結算會出現
         var guard = 0;
-        while (game.status === "playing" && guard++ < 30) {
-          var cur = game.grid[Core.idx(game.w, game.sx, game.sy)];
-          onColor((cur + 1) % level.colors);
+        while (game.status === "playing" && guard++ < 60) {
+          var i = (Math.random() * game.grid.length) | 0;
+          if (game.grid[i] === Core.OBSTACLE) continue;
+          var x = i % game.w, y = (i / game.w) | 0;
+          doMove((game.grid[i] + 1) % level.colors, x, y);
         }
         assert("步數用盡後遊戲結束", game.status !== "playing");
         assert("結束後按鈕全部停用", colorBtns.every(function (b) { return b.disabled; }));

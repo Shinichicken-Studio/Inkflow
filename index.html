@@ -1,789 +1,1504 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>墨染天青 · InkFlow</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>">
-<style>
-  /* ---------- 水墨主題 tokens（宣紙／墨／天青） ---------- */
-  :root {
-    --paper:      #ece2cf;   /* 宣紙底 */
-    --paper-2:    #e5d9c1;   /* 棋盤／控制台面 */
-    --paper-hi:   #f5efe0;   /* 高光 */
-    --ink:        #262019;   /* 濃墨（主文字） */
-    --ink-2:      #4a4238;   /* 次要文字 */
-    --ink-soft:   #6b6252;   /* 淡墨（標籤、邊線字）；對宣紙底 ≥4.5:1 */
-    --ink-line:   rgba(38,32,25,.20);  /* 墨線細框 */
-    --celadon:    #6ba3a0;   /* 天青 */
-    --celadon-2:  #4f8783;   /* 濃天青 */
-    --seal:       #b23f2e;   /* 朱砂（印章、危險） */
-    --gamboge:    #c69526;   /* 藤黃（警示） */
-    --shadow:     rgba(60,45,20,.20);
-    --paper-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
-  }
-
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { height: 100%; }
-  body {
-    background:
-      var(--paper-noise),
-      radial-gradient(1200px 760px at 50% -8%, var(--paper-hi), transparent 60%),
-      radial-gradient(1100px 900px at 50% 118%, rgba(107,163,160,.12), transparent 55%),
-      var(--paper);
-    color: var(--ink);
-    font-family: "Noto Serif TC", "Source Han Serif TC", "Songti TC", "MingLiU", "PMingLiU", "Microsoft JhengHei", serif;
-    display: flex; flex-direction: column; align-items: center;
-    user-select: none; -webkit-user-select: none;
-    touch-action: manipulation;
-  }
-  .app { width: 100%; max-width: 1080px; padding: 22px 16px 36px; }
-  header { display: flex; align-items: baseline; gap: 14px; }
-  h1 { font-size: 27px; letter-spacing: 9px; color: var(--ink); font-weight: 600;
-       font-family: "Kaiti TC", "KaiTi", "DFKai-SB", "BiauKai", "STKaiti", serif; }
-  h1 .tq { color: var(--celadon-2); }
-  h1 .en { font-size: 12px; letter-spacing: 5px; color: var(--ink-soft); font-weight: 400; margin-left: 4px;
-           font-family: "Segoe UI", sans-serif; }
-  .sub { color: var(--ink-soft); font-size: 13px; }
-  main { display: flex; gap: 22px; align-items: flex-start; justify-content: center; margin-top: 16px; }
-
-  /* ---------- 棋盤（裱在宣紙上的墨框） ---------- */
-  .board-wrap {
-    position: relative; overflow: hidden;
-    padding: 12px; border-radius: 6px;
-    background: var(--paper-noise), var(--paper-2);
-    border: 1px solid var(--ink-line);
-    box-shadow: 0 10px 34px -12px var(--shadow), inset 0 0 0 1px rgba(255,255,255,.25),
-                inset 0 0 46px rgba(79,135,131,.06);
-    width: min(92vw, 66vh, 560px);
-    flex-shrink: 0;
-  }
-  .board { display: grid; gap: 3px; width: 100%; aspect-ratio: 1; }
-  .cell {
-    position: relative; border-radius: 3px;
-    transition: background-color .3s ease;
-    box-shadow: inset 0 0 5px rgba(30,22,10,.14), inset 0 0 0 1px rgba(255,255,255,.06);
-  }
-  .cell.wave { animation: wavePulse .42s cubic-bezier(.3,.7,.4,1) both; }
-  @keyframes wavePulse {
-    0%   { transform: scale(1);    filter: brightness(1)   saturate(1); }
-    45%  { transform: scale(1.13); filter: brightness(1.32) saturate(1.25); }
-    100% { transform: scale(1);    filter: brightness(1)   saturate(1); }
-  }
-  .cell.enter { animation: cellIn .3s ease-out both; }
-  @keyframes cellIn { from { transform: scale(.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-
-  /* 自由選格：可點的格子給游標提示，hover 預覽會被染到的整塊區域（墨邊＋天青暈） */
-  .board.playable .cell:not(.obstacle) { cursor: pointer; }
-  .cell.preview { box-shadow: inset 0 0 0 2px rgba(38,32,25,.72), 0 0 10px rgba(79,135,131,.4); z-index: 1; }
-  .cell.hint-cell { animation: hintCell .8s ease 2; z-index: 4; }
-  @keyframes hintCell {
-    0%,100% { box-shadow: inset 0 0 0 1px rgba(30,22,10,.14); }
-    50%     { box-shadow: 0 0 0 3px var(--celadon-2), 0 0 16px var(--celadon); }
-  }
-
-  .cell.obstacle { background: radial-gradient(circle at 40% 35%, #33291f, #1c150e); box-shadow: inset 0 0 0 1px rgba(0,0,0,.35); }
-  .cell.obstacle::before, .cell.obstacle::after {
-    content: ""; position: absolute; left: 24%; right: 24%;
-    top: calc(50% - 1.5px); height: 3px; border-radius: 2px; background: #7a6f5c;
-  }
-  .cell.obstacle::before { transform: rotate(45deg); }
-  .cell.obstacle::after  { transform: rotate(-45deg); }
-
-  .ring { position: absolute; width: 10px; height: 10px; border: 2px solid var(--ink);
-          border-radius: 50%; transform: translate(-50%, -50%);
-          pointer-events: none; z-index: 3; opacity: .7; }
-
-  .info-line { margin-top: 10px; text-align: center; color: var(--ink-soft); font-size: 12.5px; letter-spacing: 1px; }
-
-  /* ---------- 右側控制台 ---------- */
-  .panel {
-    width: 256px; flex-shrink: 0;
-    background: var(--paper-noise), var(--paper-2); border: 1px solid var(--ink-line); border-radius: 8px;
-    box-shadow: 0 8px 28px -14px var(--shadow), inset 0 0 0 1px rgba(255,255,255,.25);
-    padding: 18px; display: flex; flex-direction: column; gap: 15px;
-  }
-  .label { font-size: 12px; color: var(--ink-soft); letter-spacing: 3px; margin-bottom: 6px; }
-  .target-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px;
-                background: rgba(255,255,255,.22); border-radius: 6px; border: 1px solid var(--ink-line); }
-  .target-swatch { width: 28px; height: 28px; border-radius: 6px;
-                   background: var(--tc);
-                   box-shadow: inset 0 0 0 1px rgba(0,0,0,.18), inset 0 -3px 6px rgba(0,0,0,.18), 0 1px 3px var(--shadow); }
-  .target-name { font-size: 16px; font-weight: 600; color: var(--ink); }
-
-  .steps-box { text-align: center; padding: 4px 0 2px; }
-  .steps-num { font-size: 48px; font-weight: 700; line-height: 1.05; color: var(--ink); display: inline-block; }
-  .steps-num.warn   { color: var(--gamboge); }
-  .steps-num.danger { color: var(--seal); }
-  .steps-num.bump { animation: bump .35s ease; }
-  @keyframes bump { 0% { transform: scale(1); } 35% { transform: scale(1.35); } 100% { transform: scale(1); } }
-  .steps-cap { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
-  .pips { display: flex; gap: 5px; justify-content: center; margin-top: 8px; flex-wrap: wrap; }
-  .pip { width: 9px; height: 9px; border-radius: 50%;
-         background: var(--celadon); box-shadow: inset 0 0 0 1px rgba(0,0,0,.12);
-         transition: background .3s, box-shadow .3s; }
-  .pip.used { background: rgba(38,32,25,.18); box-shadow: none; }
-
-  .colors { display: flex; flex-direction: column; gap: 8px; }
-  .color-btn {
-    display: flex; align-items: center; gap: 11px; width: 100%;
-    padding: 9px 12px; border-radius: 6px;
-    border: 1px solid var(--ink-line); background: rgba(255,255,255,.24); color: var(--ink);
-    cursor: pointer; font-size: 15px; font-family: inherit; position: relative;
-    transition: transform .12s, border-color .15s, box-shadow .15s, opacity .2s, background .15s;
-  }
-  .color-btn:hover:not(:disabled) { transform: translateY(-1px); border-color: var(--celadon-2);
-                                    box-shadow: 0 5px 14px -8px var(--shadow); background: rgba(255,255,255,.4); }
-  .color-btn:active:not(:disabled) { transform: scale(.97); }
-  .color-btn:disabled { opacity: .4; cursor: not-allowed; }
-  .color-btn.current { opacity: 1; border-color: var(--ink);
-                       box-shadow: inset 0 0 0 2px var(--ink); }
-  .swatch { width: 22px; height: 22px; border-radius: 50%; background: var(--c); flex-shrink: 0;
-            box-shadow: inset 0 -3px 6px rgba(0,0,0,.28), inset 0 0 0 1px rgba(0,0,0,.15); }
-  .color-btn .right { margin-left: auto; display: flex; align-items: center; gap: 7px; }
-  /* 「選中」做成朱砂印章的樣子 */
-  .color-btn .badge { display: none; font-size: 10px; color: var(--paper-hi); letter-spacing: 2px;
-                      background: var(--seal); padding: 2px 7px 1px; border-radius: 3px;
-                      box-shadow: 0 1px 2px rgba(0,0,0,.25); }
-  .color-btn.current .badge { display: inline-block; }
-  .color-btn kbd { font-size: 11px; color: var(--ink-soft); border: 1px solid var(--ink-line);
-                   border-radius: 4px; padding: 0 6px; line-height: 17px; }
-  .color-btn.hint-flash { animation: hintFlash .9s ease 2; }
-  @keyframes hintFlash { 0%,100% { box-shadow: inset 0 0 0 0 transparent; }
-                         50% { box-shadow: 0 0 0 3px var(--celadon-2), 0 0 18px rgba(107,163,160,.7); } }
-
-  .actions { display: flex; gap: 8px; }
-  .btn {
-    padding: 9px 6px; border-radius: 6px; flex: 1; white-space: nowrap;
-    border: 1px solid var(--ink-line); background: rgba(255,255,255,.24); color: var(--ink-2);
-    cursor: pointer; font-size: 13px; font-family: inherit; transition: all .15s;
-  }
-  .btn:hover { border-color: var(--celadon-2); color: var(--ink); background: rgba(255,255,255,.42); }
-  .btn.primary { background: linear-gradient(180deg, var(--celadon), var(--celadon-2));
-                 color: var(--paper-hi); border: 1px solid transparent; font-weight: 700; }
-  .btn.primary:hover { filter: brightness(1.06); color: var(--paper-hi); }
-
-  .seg { display: flex; background: rgba(38,32,25,.06); border: 1px solid var(--ink-line);
-         border-radius: 6px; padding: 3px; gap: 3px; }
-  .seg button { flex: 1; padding: 7px 0; background: none; border: 0; color: var(--ink-soft);
-                border-radius: 4px; cursor: pointer; font-size: 13px; font-family: inherit;
-                transition: background .15s, color .15s; }
-  .seg button.active { background: var(--ink); color: var(--paper-hi); }
-  .help { font-size: 11.5px; color: var(--ink-soft); text-align: center; line-height: 1.7; }
-
-  /* ---------- 結算 ---------- */
-  .overlay {
-    position: fixed; inset: 0; z-index: 50;
-    display: flex; align-items: center; justify-content: center;
-    background: rgba(30,24,16,.5); backdrop-filter: blur(4px);
-    opacity: 0; pointer-events: none; transition: opacity .3s;
-  }
-  .overlay.show { opacity: 1; pointer-events: auto; }
-  .card {
-    background: var(--paper-noise), var(--paper); border: 1px solid var(--ink-line); border-radius: 10px;
-    padding: 38px 46px; text-align: center;
-    box-shadow: 0 30px 70px -20px rgba(0,0,0,.5), inset 0 0 0 1px rgba(255,255,255,.3);
-    transform: translateY(14px) scale(.95);
-    transition: transform .35s cubic-bezier(.2,.9,.3,1.25);
-  }
-  .overlay.show .card { transform: none; }
-  .card h2 { font-size: 30px; letter-spacing: 12px; margin-bottom: 12px; padding-left: 12px;
-             font-family: "Kaiti TC", "KaiTi", "DFKai-SB", "BiauKai", "STKaiti", serif; }
-  .card.win h2  { color: var(--celadon-2); }
-  .card.lose h2 { color: var(--seal); }
-  .card p { color: var(--ink-2); margin-bottom: 24px; font-size: 14px; }
-  .card .btns { display: flex; gap: 10px; justify-content: center; }
-  .card .btn { flex: none; padding: 10px 24px; }
-
-  .confetti { position: fixed; z-index: 55; pointer-events: none;
-              width: 9px; height: 9px; border-radius: 50%; left: 50%; top: 42%; }
-
-  .toast {
-    position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%) translateY(8px);
-    background: var(--ink); border: 1px solid rgba(255,255,255,.12); border-radius: 24px;
-    padding: 9px 20px; color: var(--paper-hi); font-size: 13px;
-    opacity: 0; transition: opacity .25s, transform .25s;
-    pointer-events: none; z-index: 60; white-space: nowrap;
-    box-shadow: 0 8px 20px -8px rgba(0,0,0,.4);
-  }
-  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-
-  @media (max-width: 880px) {
-    main { flex-direction: column; align-items: center; }
-    .panel { width: min(92vw, 560px); }
-    .colors { display: grid; grid-template-columns: 1fr 1fr; }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    * { animation: none !important; transition: none !important; }
-  }
-
-  /* ---------- 暗色：墨底宣紙（跟隨系統深色） ---------- */
-  @media (prefers-color-scheme: dark) {
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>墨染天青 · InkFlow</title>
+  <link rel="icon"
+    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>">
+  <style>
+    /* ---------- 水墨主題 tokens（宣紙／墨／天青） ---------- */
     :root {
-      --paper:    #211c15;
-      --paper-2:  #191510;
-      --paper-hi: #2c261d;
-      --ink:      #ece2cf;
-      --ink-2:    #cabfa6;
-      --ink-soft: #93876f;
-      --ink-line: rgba(236,226,207,.16);
-      --celadon:  #7cb6b0;
-      --celadon-2: #9dccc5;
-      --seal:     #cf5842;
-      --gamboge:  #d7ab48;
-      --shadow:   rgba(0,0,0,.5);
-      --paper-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      --paper: #ece2cf;
+      /* 宣紙底 */
+      --paper-2: #e5d9c1;
+      /* 棋盤／控制台面 */
+      --paper-hi: #f5efe0;
+      /* 高光 */
+      --ink: #262019;
+      /* 濃墨（主文字） */
+      --ink-2: #4a4238;
+      /* 次要文字 */
+      --ink-soft: #6b6252;
+      /* 淡墨（標籤、邊線字）；對宣紙底 ≥4.5:1 */
+      --ink-line: rgba(38, 32, 25, .20);
+      /* 墨線細框 */
+      --celadon: #6ba3a0;
+      /* 天青 */
+      --celadon-2: #4f8783;
+      /* 濃天青 */
+      --seal: #b23f2e;
+      /* 朱砂（印章、危險） */
+      --gamboge: #c69526;
+      /* 藤黃（警示） */
+      --shadow: rgba(60, 45, 20, .20);
+      --paper-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.14'/%3E%3C/svg%3E");
     }
-    body { background:
-      var(--paper-noise),
-      radial-gradient(1200px 760px at 50% -8%, #2c261d, transparent 60%),
-      radial-gradient(1100px 900px at 50% 118%, rgba(124,182,176,.10), transparent 55%),
-      var(--paper); }
-    .target-row, .color-btn, .btn { background: rgba(255,255,255,.05); }
-    .color-btn:hover:not(:disabled), .btn:hover { background: rgba(255,255,255,.09); }
-    .board-wrap, .panel, .card { box-shadow: 0 10px 34px -12px var(--shadow), inset 0 0 0 1px rgba(255,255,255,.05); }
-    .seg { background: rgba(0,0,0,.22); }
-  }
-</style>
-</head>
-<body>
-<div class="app">
-  <header>
-    <h1>墨染<span class="tq">天青</span><span class="en">INKFLOW</span></h1>
-    <span class="sub">先選一種顏色，再點畫布任一格，把整個畫布染成目標顏色</span>
-  </header>
-  <main>
-    <div>
-      <div class="board-wrap" id="boardWrap">
-        <div class="board" id="board"></div>
-      </div>
-      <div class="info-line" id="infoLine"></div>
-    </div>
-    <aside class="panel">
-      <div>
-        <div class="label">目標顏色</div>
-        <div class="target-row">
-          <div class="target-swatch" id="targetSwatch"></div>
-          <div class="target-name" id="targetName"></div>
-        </div>
-      </div>
-      <div class="steps-box">
-        <div class="label">剩餘步數</div>
-        <div class="steps-num" id="stepsNum">7</div>
-        <div class="steps-cap" id="stepsCap"></div>
-        <div class="pips" id="pips"></div>
-      </div>
-      <div>
-        <div class="label">選擇顏色</div>
-        <div class="colors" id="colors"></div>
-      </div>
-      <div class="actions">
-        <button class="btn" id="hintBtn">提示</button>
-        <button class="btn" id="restartBtn">重試</button>
-        <button class="btn" id="newBtn">新關卡</button>
-        <button class="btn" id="soundBtn" style="flex:0 0 42px" title="音效開關">🔊</button>
-      </div>
-      <div>
-        <div class="label">難度</div>
-        <div class="seg" id="diffSeg">
-          <button data-diff="easy">簡單</button>
-          <button data-diff="normal" class="active">普通</button>
-          <button data-diff="hard">困難</button>
-        </div>
-      </div>
-      <div class="help">先選色，再點畫布上的格子上色<br>鍵盤 1–5 選色 ・ H 提示 ・ R 重來 ・ N 新關卡</div>
-    </aside>
-  </main>
-</div>
 
-<div class="overlay" id="overlay">
-  <div class="card" id="card">
-    <h2 id="cardTitle"></h2>
-    <p id="cardDesc"></p>
-    <div class="btns">
-      <button class="btn primary" id="cardPrimary"></button>
-      <button class="btn" id="cardSecondary"></button>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      height: 100%;
+    }
+
+    body {
+      background:
+        var(--paper-noise),
+        radial-gradient(1200px 760px at 50% -8%, var(--paper-hi), transparent 60%),
+        radial-gradient(1100px 900px at 50% 118%, rgba(107, 163, 160, .12), transparent 55%),
+        var(--paper);
+      color: var(--ink);
+      font-family: "Noto Serif TC", "Source Han Serif TC", "Songti TC", "MingLiU", "PMingLiU", "Microsoft JhengHei", serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: manipulation;
+    }
+
+    .app {
+      width: 100%;
+      max-width: 1080px;
+      padding: 22px 16px 36px;
+    }
+
+    header {
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+    }
+
+    h1 {
+      font-size: 27px;
+      letter-spacing: 9px;
+      color: var(--ink);
+      font-weight: 600;
+      font-family: "Kaiti TC", "KaiTi", "DFKai-SB", "BiauKai", "STKaiti", serif;
+    }
+
+    h1 .tq {
+      color: var(--celadon-2);
+    }
+
+    h1 .en {
+      font-size: 12px;
+      letter-spacing: 5px;
+      color: var(--ink-soft);
+      font-weight: 400;
+      margin-left: 4px;
+      font-family: "Segoe UI", sans-serif;
+    }
+
+    .sub {
+      color: var(--ink-soft);
+      font-size: 13px;
+    }
+
+    main {
+      display: flex;
+      gap: 22px;
+      align-items: flex-start;
+      justify-content: center;
+      margin-top: 16px;
+    }
+
+    /* ---------- 棋盤（裱在宣紙上的墨框） ---------- */
+    .board-wrap {
+      position: relative;
+      overflow: hidden;
+      padding: 12px;
+      border-radius: 6px;
+      background: var(--paper-noise), var(--paper-2);
+      border: 1px solid var(--ink-line);
+      box-shadow: 0 10px 34px -12px var(--shadow), inset 0 0 0 1px rgba(255, 255, 255, .25),
+        inset 0 0 46px rgba(79, 135, 131, .06);
+      width: min(92vw, 66vh, 560px);
+      flex-shrink: 0;
+    }
+
+    .board {
+      display: grid;
+      gap: 3px;
+      width: 100%;
+      aspect-ratio: 1;
+    }
+
+    .cell {
+      position: relative;
+      border-radius: 3px;
+      transition: background-color .45s ease;
+      box-shadow: inset 0 0 5px rgba(30, 22, 10, .14), inset 0 0 0 1px rgba(255, 255, 255, .06);
+    }
+
+    .cell.wave {
+      animation: wavePulse .55s cubic-bezier(.3, .7, .4, 1) both;
+    }
+
+    @keyframes wavePulse {
+      0% {
+        transform: scale(1);
+        filter: brightness(1) saturate(1);
+      }
+
+      45% {
+        transform: scale(1.13);
+        filter: brightness(1.32) saturate(1.25);
+      }
+
+      100% {
+        transform: scale(1);
+        filter: brightness(1) saturate(1);
+      }
+    }
+
+    .cell.enter {
+      animation: cellIn .3s ease-out both;
+    }
+
+    @keyframes cellIn {
+      from {
+        transform: scale(.5);
+        opacity: 0;
+      }
+
+      to {
+        transform: scale(1);
+        opacity: 1;
+      }
+    }
+
+    /* 自由選格：可點的格子給游標提示，hover 預覽會被染到的整塊區域（墨邊＋天青暈） */
+    .board.playable .cell:not(.obstacle) {
+      cursor: pointer;
+    }
+
+    .cell.preview {
+      box-shadow: inset 0 0 0 2px rgba(38, 32, 25, .72), 0 0 10px rgba(79, 135, 131, .4);
+      z-index: 1;
+    }
+
+    .cell.hint-cell {
+      animation: hintCell .8s ease 2;
+      z-index: 4;
+    }
+
+    @keyframes hintCell {
+
+      0%,
+      100% {
+        box-shadow: inset 0 0 0 1px rgba(30, 22, 10, .14);
+      }
+
+      50% {
+        box-shadow: 0 0 0 3px var(--celadon-2), 0 0 16px var(--celadon);
+      }
+    }
+
+    .cell.obstacle {
+      background: radial-gradient(circle at 40% 35%, #33291f, #1c150e);
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .35);
+    }
+
+    .cell.obstacle::before,
+    .cell.obstacle::after {
+      content: "";
+      position: absolute;
+      left: 24%;
+      right: 24%;
+      top: calc(50% - 1.5px);
+      height: 3px;
+      border-radius: 2px;
+      background: #7a6f5c;
+    }
+
+    .cell.obstacle::before {
+      transform: rotate(45deg);
+    }
+
+    .cell.obstacle::after {
+      transform: rotate(-45deg);
+    }
+
+    .ring {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      border: 2px solid var(--ink);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 3;
+      opacity: .7;
+    }
+
+    .info-line {
+      margin-top: 10px;
+      text-align: center;
+      color: var(--ink-soft);
+      font-size: 12.5px;
+      letter-spacing: 1px;
+    }
+
+    /* ---------- 右側控制台 ---------- */
+    .panel {
+      width: 256px;
+      flex-shrink: 0;
+      background: var(--paper-noise), var(--paper-2);
+      border: 1px solid var(--ink-line);
+      border-radius: 8px;
+      box-shadow: 0 8px 28px -14px var(--shadow), inset 0 0 0 1px rgba(255, 255, 255, .25);
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+
+    .label {
+      font-size: 12px;
+      color: var(--ink-soft);
+      letter-spacing: 3px;
+      margin-bottom: 6px;
+    }
+
+    .target-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      background: rgba(255, 255, 255, .22);
+      border-radius: 6px;
+      border: 1px solid var(--ink-line);
+    }
+
+    .target-swatch {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      background: var(--tc);
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .18), inset 0 -3px 6px rgba(0, 0, 0, .18), 0 1px 3px var(--shadow);
+    }
+
+    .target-name {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+
+    .steps-box {
+      text-align: center;
+      padding: 4px 0 2px;
+    }
+
+    .steps-num {
+      font-size: 48px;
+      font-weight: 700;
+      line-height: 1.05;
+      color: var(--ink);
+      display: inline-block;
+    }
+
+    .steps-num.warn {
+      color: var(--gamboge);
+    }
+
+    .steps-num.danger {
+      color: var(--seal);
+    }
+
+    .steps-num.bump {
+      animation: bump .35s ease;
+    }
+
+    @keyframes bump {
+      0% {
+        transform: scale(1);
+      }
+
+      35% {
+        transform: scale(1.35);
+      }
+
+      100% {
+        transform: scale(1);
+      }
+    }
+
+    .steps-cap {
+      font-size: 12px;
+      color: var(--ink-soft);
+      margin-top: 2px;
+    }
+
+    .pips {
+      display: flex;
+      gap: 5px;
+      justify-content: center;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+
+    .pip {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--celadon);
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12);
+      transition: background .3s, box-shadow .3s;
+    }
+
+    .pip.used {
+      background: rgba(38, 32, 25, .18);
+      box-shadow: none;
+    }
+
+    .colors {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .color-btn {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      width: 100%;
+      padding: 9px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--ink-line);
+      background: rgba(255, 255, 255, .24);
+      color: var(--ink);
+      cursor: pointer;
+      font-size: 15px;
+      font-family: inherit;
+      position: relative;
+      transition: transform .12s, border-color .15s, box-shadow .15s, opacity .2s, background .15s;
+    }
+
+    .color-btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+      border-color: var(--celadon-2);
+      box-shadow: 0 5px 14px -8px var(--shadow);
+      background: rgba(255, 255, 255, .4);
+    }
+
+    .color-btn:active:not(:disabled) {
+      transform: scale(.97);
+    }
+
+    .color-btn:disabled {
+      opacity: .4;
+      cursor: not-allowed;
+    }
+
+    .color-btn.current {
+      opacity: 1;
+      border-color: var(--ink);
+      box-shadow: inset 0 0 0 2px var(--ink);
+    }
+
+    .swatch {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--c);
+      flex-shrink: 0;
+      box-shadow: inset 0 -3px 6px rgba(0, 0, 0, .28), inset 0 0 0 1px rgba(0, 0, 0, .15);
+    }
+
+    .color-btn .right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    /* 「選中」做成朱砂印章的樣子 */
+    .color-btn .badge {
+      display: none;
+      font-size: 10px;
+      color: var(--paper-hi);
+      letter-spacing: 2px;
+      background: var(--seal);
+      padding: 2px 7px 1px;
+      border-radius: 3px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, .25);
+    }
+
+    .color-btn.current .badge {
+      display: inline-block;
+    }
+
+    .color-btn kbd {
+      font-size: 11px;
+      color: var(--ink-soft);
+      border: 1px solid var(--ink-line);
+      border-radius: 4px;
+      padding: 0 6px;
+      line-height: 17px;
+    }
+
+    .color-btn.hint-flash {
+      animation: hintFlash .9s ease 2;
+    }
+
+    @keyframes hintFlash {
+
+      0%,
+      100% {
+        box-shadow: inset 0 0 0 0 transparent;
+      }
+
+      50% {
+        box-shadow: 0 0 0 3px var(--celadon-2), 0 0 18px rgba(107, 163, 160, .7);
+      }
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn {
+      padding: 9px 6px;
+      border-radius: 6px;
+      flex: 1;
+      white-space: nowrap;
+      border: 1px solid var(--ink-line);
+      background: rgba(255, 255, 255, .24);
+      color: var(--ink-2);
+      cursor: pointer;
+      font-size: 13px;
+      font-family: inherit;
+      transition: all .15s;
+    }
+
+    .btn:hover {
+      border-color: var(--celadon-2);
+      color: var(--ink);
+      background: rgba(255, 255, 255, .42);
+    }
+
+    .btn.off {
+      opacity: .42;
+    }
+
+    /* 音樂關閉時淡出圖示 */
+    .btn.primary {
+      background: linear-gradient(180deg, var(--celadon), var(--celadon-2));
+      color: var(--paper-hi);
+      border: 1px solid transparent;
+      font-weight: 700;
+    }
+
+    .btn.primary:hover {
+      filter: brightness(1.06);
+      color: var(--paper-hi);
+    }
+
+    .seg {
+      display: flex;
+      background: rgba(38, 32, 25, .06);
+      border: 1px solid var(--ink-line);
+      border-radius: 6px;
+      padding: 3px;
+      gap: 3px;
+    }
+
+    .seg button {
+      flex: 1;
+      padding: 7px 0;
+      background: none;
+      border: 0;
+      color: var(--ink-soft);
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      font-family: inherit;
+      transition: background .15s, color .15s;
+    }
+
+    .seg button.active {
+      background: var(--ink);
+      color: var(--paper-hi);
+    }
+
+    .help {
+      font-size: 11.5px;
+      color: var(--ink-soft);
+      text-align: center;
+      line-height: 1.7;
+    }
+
+    /* ---------- 結算 ---------- */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(30, 24, 16, .5);
+      backdrop-filter: blur(4px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .3s;
+    }
+
+    .overlay.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .card {
+      background: var(--paper-noise), var(--paper);
+      border: 1px solid var(--ink-line);
+      border-radius: 10px;
+      padding: 38px 46px;
+      text-align: center;
+      box-shadow: 0 30px 70px -20px rgba(0, 0, 0, .5), inset 0 0 0 1px rgba(255, 255, 255, .3);
+      transform: translateY(14px) scale(.95);
+      transition: transform .35s cubic-bezier(.2, .9, .3, 1.25);
+    }
+
+    .overlay.show .card {
+      transform: none;
+    }
+
+    .card h2 {
+      font-size: 30px;
+      letter-spacing: 12px;
+      margin-bottom: 12px;
+      padding-left: 12px;
+      font-family: "Kaiti TC", "KaiTi", "DFKai-SB", "BiauKai", "STKaiti", serif;
+    }
+
+    .card.win h2 {
+      color: var(--celadon-2);
+    }
+
+    .card.lose h2 {
+      color: var(--seal);
+    }
+
+    .card p {
+      color: var(--ink-2);
+      margin-bottom: 24px;
+      font-size: 14px;
+    }
+
+    .card .btns {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+    }
+
+    .card .btn {
+      flex: none;
+      padding: 10px 24px;
+    }
+
+    .confetti {
+      position: fixed;
+      z-index: 55;
+      pointer-events: none;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      left: 50%;
+      top: 42%;
+    }
+
+    /* ---------- 水墨動態（anime.js） ---------- */
+    .ambient {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      overflow: hidden;
+    }
+
+    .ambient span {
+      position: absolute;
+      border-radius: 50%;
+      opacity: 0;
+      filter: blur(56px);
+      background: radial-gradient(circle, rgba(107, 163, 160, .75), transparent 70%);
+    }
+
+    .app {
+      position: relative;
+      z-index: 1;
+    }
+
+    h1 .ch {
+      display: inline-block;
+      will-change: transform, opacity, filter;
+    }
+
+    .ink-bloom {
+      position: absolute;
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 2;
+      opacity: 0;
+      filter: blur(3px);
+    }
+
+    .petal {
+      position: fixed;
+      z-index: 55;
+      pointer-events: none;
+      width: 12px;
+      height: 12px;
+      border-radius: 0 100% 0 100%;
+      opacity: 0;
+    }
+
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 40px;
+      transform: translateX(-50%) translateY(8px);
+      background: var(--ink);
+      border: 1px solid rgba(255, 255, 255, .12);
+      border-radius: 24px;
+      padding: 9px 20px;
+      color: var(--paper-hi);
+      font-size: 13px;
+      opacity: 0;
+      transition: opacity .25s, transform .25s;
+      pointer-events: none;
+      z-index: 60;
+      white-space: nowrap;
+      box-shadow: 0 8px 20px -8px rgba(0, 0, 0, .4);
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    @media (max-width: 880px) {
+      main {
+        flex-direction: column;
+        align-items: center;
+      }
+
+      .panel {
+        width: min(92vw, 560px);
+      }
+
+      .colors {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        animation: none !important;
+        transition: none !important;
+      }
+    }
+
+    /* ---------- 暗色：墨底宣紙（跟隨系統深色） ---------- */
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --paper: #211c15;
+        --paper-2: #191510;
+        --paper-hi: #2c261d;
+        --ink: #ece2cf;
+        --ink-2: #cabfa6;
+        --ink-soft: #93876f;
+        --ink-line: rgba(236, 226, 207, .16);
+        --celadon: #7cb6b0;
+        --celadon-2: #9dccc5;
+        --seal: #cf5842;
+        --gamboge: #d7ab48;
+        --shadow: rgba(0, 0, 0, .5);
+        --paper-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E");
+      }
+
+      body {
+        background:
+          var(--paper-noise),
+          radial-gradient(1200px 760px at 50% -8%, #2c261d, transparent 60%),
+          radial-gradient(1100px 900px at 50% 118%, rgba(124, 182, 176, .10), transparent 55%),
+          var(--paper);
+      }
+
+      .target-row,
+      .color-btn,
+      .btn {
+        background: rgba(255, 255, 255, .05);
+      }
+
+      .color-btn:hover:not(:disabled),
+      .btn:hover {
+        background: rgba(255, 255, 255, .09);
+      }
+
+      .board-wrap,
+      .panel,
+      .card {
+        box-shadow: 0 10px 34px -12px var(--shadow), inset 0 0 0 1px rgba(255, 255, 255, .05);
+      }
+
+      .seg {
+        background: rgba(0, 0, 0, .22);
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="ambient" id="ambient"><span></span><span></span></div>
+  <div class="app">
+    <header>
+      <h1><span class="ch">墨</span><span class="ch">染</span><span class="ch tq">天</span><span
+          class="ch tq">青</span><span class="en">INKFLOW</span></h1>
+      <span class="sub">先選一種顏色，再點畫布任一格，把整個畫布染成目標顏色</span>
+    </header>
+    <main>
+      <div>
+        <div class="board-wrap" id="boardWrap">
+          <div class="board" id="board"></div>
+        </div>
+        <div class="info-line" id="infoLine"></div>
+      </div>
+      <aside class="panel">
+        <div>
+          <div class="label">目標顏色</div>
+          <div class="target-row">
+            <div class="target-swatch" id="targetSwatch"></div>
+            <div class="target-name" id="targetName"></div>
+          </div>
+        </div>
+        <div class="steps-box">
+          <div class="label">剩餘步數</div>
+          <div class="steps-num" id="stepsNum">7</div>
+          <div class="steps-cap" id="stepsCap"></div>
+          <div class="pips" id="pips"></div>
+        </div>
+        <div>
+          <div class="label">選擇顏色</div>
+          <div class="colors" id="colors"></div>
+        </div>
+        <div class="actions">
+          <button class="btn" id="hintBtn">提示</button>
+          <button class="btn" id="restartBtn">重試</button>
+          <button class="btn" id="newBtn">新關卡</button>
+          <button class="btn" id="soundBtn" style="flex:0 0 40px" title="音效開關">🔊</button>
+          <button class="btn" id="musicBtn" style="flex:0 0 40px" title="背景音樂">🎵</button>
+        </div>
+        <div>
+          <div class="label">難度</div>
+          <div class="seg" id="diffSeg">
+            <button data-diff="easy">簡單</button>
+            <button data-diff="normal" class="active">普通</button>
+            <button data-diff="hard">困難</button>
+          </div>
+        </div>
+        <div class="help">先選色，再點畫布上的格子上色<br>鍵盤 1–5 選色 ・ H 提示 ・ R 重來 ・ N 新關卡</div>
+      </aside>
+    </main>
+  </div>
+
+  <div class="overlay" id="overlay">
+    <div class="card" id="card">
+      <h2 id="cardTitle"></h2>
+      <p id="cardDesc"></p>
+      <div class="btns">
+        <button class="btn primary" id="cardPrimary"></button>
+        <button class="btn" id="cardSecondary"></button>
+      </div>
     </div>
   </div>
-</div>
-<div class="toast" id="toast"></div>
+  <div class="toast" id="toast"></div>
 
-<script src="game.js"></script>
-<script>
-(function () {
-  "use strict";
-  var Core = window.InkflowCore;
-  var WAVE = 45; // 每格波紋延遲（毫秒），依 BFS 距離擴散、自然繞過障礙物
+  <script src="anime.min.js"></script>
+  <script src="game.js"></script>
+  <script>
+    (function () {
+      "use strict";
+      var Core = window.InkflowCore;
+      var WAVE = 65; // 每格波紋延遲（毫秒），依 BFS 距離擴散、自然繞過障礙物；值越大染色擴散越慢
+      // 水墨動態（anime.js 驅動）；尊重系統的「減少動態」設定
+      var REDUCE = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      var ANIM = (typeof anime !== "undefined") && !REDUCE;
 
-  // 傳統國畫顏料（朱砂／藤黃／花青／石綠／青蓮），比原本的螢光色更沉、更像水墨
-  var PALETTE = [
-    { color: "#c0432f", name: "紅" },   // 朱砂
-    { color: "#d3a12f", name: "黃" },   // 藤黃
-    { color: "#3f6f92", name: "藍" },   // 花青
-    { color: "#5f9160", name: "綠" },   // 石綠
-    { color: "#7c5f90", name: "紫" }    // 青蓮
-  ];
-  var DIFF_NAMES = { easy: "簡單", normal: "普通", hard: "困難" };
+      // 傳統國畫顏料（朱砂／藤黃／花青／石綠／青蓮），比原本的螢光色更沉、更像水墨
+      var PALETTE = [
+        { color: "#c0432f", name: "紅" },   // 朱砂
+        { color: "#d3a12f", name: "黃" },   // 藤黃
+        { color: "#3f6f92", name: "藍" },   // 花青
+        { color: "#5f9160", name: "綠" },   // 石綠
+        { color: "#7c5f90", name: "紫" }    // 青蓮
+      ];
+      var DIFF_NAMES = { easy: "簡單", normal: "普通", hard: "困難" };
 
-  var $ = function (id) { return document.getElementById(id); };
-  var boardEl = $("board"), boardWrap = $("boardWrap"), infoLine = $("infoLine");
-  var colorsEl = $("colors"), stepsNum = $("stepsNum"), stepsCap = $("stepsCap"), pipsEl = $("pips");
-  var targetSwatch = $("targetSwatch"), targetName = $("targetName");
-  var overlay = $("overlay"), card = $("card"), cardTitle = $("cardTitle"), cardDesc = $("cardDesc");
-  var cardPrimary = $("cardPrimary"), cardSecondary = $("cardSecondary");
-  var toastEl = $("toast");
+      var $ = function (id) { return document.getElementById(id); };
+      var boardEl = $("board"), boardWrap = $("boardWrap"), infoLine = $("infoLine");
+      var colorsEl = $("colors"), stepsNum = $("stepsNum"), stepsCap = $("stepsCap"), pipsEl = $("pips");
+      var targetSwatch = $("targetSwatch"), targetName = $("targetName");
+      var overlay = $("overlay"), card = $("card"), cardTitle = $("cardTitle"), cardDesc = $("cardDesc");
+      var cardPrimary = $("cardPrimary"), cardSecondary = $("cardSecondary");
+      var toastEl = $("toast");
 
-  var difficulty = "normal";
-  var level = null, game = null;
-  var armedColor = 0;              // 目前選中的顏色（先選色，再點格上色）
-  var cellEls = [], colorBtns = [], previewEls = [];
-  var cleanupTimer = null, overlayTimer = null, toastTimer = null;
+      var difficulty = "normal";
+      var level = null, game = null;
+      var armedColor = 0;              // 目前選中的顏色（先選色，再點格上色）
+      var cellEls = [], colorBtns = [], previewEls = [];
+      var cleanupTimer = null, overlayTimer = null, toastTimer = null;
 
-  // ---------- 音效（WebAudio 合成，無需外部檔案） ----------
-  var audioOn = true;
-  try { audioOn = localStorage.getItem("inkflow-sound") !== "0"; } catch (e) {}
-  var actx = null;
-  function tone(freq0, freq1, dur, type, vol, delay) {
-    if (!audioOn) return;
-    try {
-      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
-      var t = actx.currentTime + (delay || 0);
-      var o = actx.createOscillator(), g = actx.createGain();
-      o.type = type || "triangle";
-      o.frequency.setValueAtTime(freq0, t);
-      if (freq1 && freq1 !== freq0) o.frequency.exponentialRampToValueAtTime(freq1, t + dur);
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(vol || 0.1, t + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      o.connect(g); g.connect(actx.destination);
-      o.start(t); o.stop(t + dur + 0.05);
-    } catch (e) {}
-  }
-  function sndMove(absorbedAny) {
-    tone(300, 520, 0.18, "triangle", 0.09);
-    if (absorbedAny) tone(520, 780, 0.16, "triangle", 0.08, 0.09);
-  }
-  function sndWin() {
-    [523, 659, 784, 1047].forEach(function (f, i) { tone(f, f, 0.32, "triangle", 0.11, i * 0.13); });
-  }
-  function sndLose() {
-    tone(230, 140, 0.4, "sawtooth", 0.06);
-    tone(170, 105, 0.5, "sawtooth", 0.05, 0.16);
-  }
-
-  function newLevel() {
-    var preset = Object.assign({}, Core.PRESETS[difficulty]);
-    level = Core.generateLevel(preset) || Core.generateLevel(Object.assign(preset, { attempts: 300 }));
-    game = Core.createGame(level);
-    armedColor = 0;
-    buildBoard(true);
-    buildColorButtons();
-    updatePanel(false);
-    updateInfo();
-    hideOverlay();
-  }
-
-  function restart() {
-    game = Core.createGame(level);
-    armedColor = 0;
-    buildBoard(true);
-    updatePanel(false);
-    hideOverlay();
-  }
-
-  function buildBoard(entrance) {
-    clearTimeout(cleanupTimer);
-    previewEls = [];
-    boardEl.innerHTML = "";
-    boardEl.classList.add("playable");
-    boardEl.style.gridTemplateColumns = "repeat(" + level.w + ", 1fr)";
-    cellEls = [];
-    var cx0 = (level.w - 1) / 2, cy0 = (level.h - 1) / 2; // 入場動畫由畫布中心向外
-    for (var i = 0; i < level.w * level.h; i++) {
-      var el = document.createElement("div");
-      el.className = "cell";
-      var v = game.grid[i];
-      var x = i % level.w, y = (i / level.w) | 0;
-      if (v === Core.OBSTACLE) {
-        el.classList.add("obstacle");
-      } else {
-        el.style.backgroundColor = PALETTE[v].color;
+      // ---------- 音效（WebAudio 合成，無需外部檔案） ----------
+      var audioOn = true;
+      try { audioOn = localStorage.getItem("inkflow-sound") !== "0"; } catch (e) { }
+      var musicOn = true;
+      try { musicOn = localStorage.getItem("inkflow-music") !== "0"; } catch (e) { }
+      var musicKicked = false;
+      var actx = null;
+      function tone(freq0, freq1, dur, type, vol, delay) {
+        if (!audioOn) return;
+        try {
+          actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+          var t = actx.currentTime + (delay || 0);
+          var o = actx.createOscillator(), g = actx.createGain();
+          o.type = type || "triangle";
+          o.frequency.setValueAtTime(freq0, t);
+          if (freq1 && freq1 !== freq0) o.frequency.exponentialRampToValueAtTime(freq1, t + dur);
+          g.gain.setValueAtTime(0.0001, t);
+          g.gain.exponentialRampToValueAtTime(vol || 0.1, t + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+          o.connect(g); g.connect(actx.destination);
+          o.start(t); o.stop(t + dur + 0.05);
+        } catch (e) { }
       }
-      if (entrance) {
-        el.style.animationDelay = ((Math.abs(x - cx0) + Math.abs(y - cy0)) * 16) + "ms";
-        el.classList.add("enter");
-        el.addEventListener("animationend", function () {
-          this.classList.remove("enter");
-          this.style.animationDelay = "0ms";
-        }, { once: true });
+      // 水滴聲：正弦波快速上揚的「咚」＋瞬間落點、短促衰減（水珠入水的氣泡共振）
+      function drop(base, vol, delay) {
+        if (!audioOn) return;
+        try {
+          actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+          var t = actx.currentTime + (delay || 0);
+          var o = actx.createOscillator(), g = actx.createGain();
+          o.type = "sine";
+          o.frequency.setValueAtTime(base * 0.5, t);
+          o.frequency.exponentialRampToValueAtTime(base * 2.2, t + 0.09); // 快速上揚＝水滴音高
+          g.gain.setValueAtTime(0.0001, t);
+          g.gain.exponentialRampToValueAtTime(vol, t + 0.008);            // 幾乎瞬間的落點
+          g.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
+          o.connect(g); g.connect(actx.destination);
+          o.start(t); o.stop(t + 0.28);
+        } catch (e) { }
       }
-      (function (x, y) {
-        el.addEventListener("click", function () { cellClick(x, y); });
-        el.addEventListener("pointerenter", function () { setPreview(x, y); });
-      })(x, y);
-      boardEl.appendChild(el);
-      cellEls.push(el);
-    }
-    boardEl.onpointerleave = clearPreview;
-  }
-
-  function buildColorButtons() {
-    colorsEl.innerHTML = "";
-    colorBtns = [];
-    for (var c = 0; c < level.colors; c++) {
-      (function (c) {
-        var b = document.createElement("button");
-        b.className = "color-btn";
-        b.style.setProperty("--c", PALETTE[c].color);
-        b.innerHTML =
-          '<span class="swatch"></span><span class="cname">' + PALETTE[c].name + "</span>" +
-          '<span class="right"><span class="badge">選中</span><kbd>' + (c + 1) + "</kbd></span>";
-        b.addEventListener("click", function () { armColor(c); });
-        colorsEl.appendChild(b);
-        colorBtns.push(b);
-      })(c);
-    }
-  }
-
-  function updatePanel(animateSteps) {
-    var playing = game.status === "playing";
-    for (var c = 0; c < colorBtns.length; c++) {
-      colorBtns[c].classList.toggle("current", c === armedColor); // 標出「選中」的顏色
-      colorBtns[c].disabled = !playing;
-    }
-    var left = game.maxSteps - game.steps;
-    stepsNum.textContent = left;
-    stepsNum.classList.toggle("warn", left === 2);
-    stepsNum.classList.toggle("danger", left <= 1);
-    if (animateSteps) {
-      stepsNum.classList.remove("bump");
-      void stepsNum.offsetWidth;
-      stepsNum.classList.add("bump");
-    }
-    stepsCap.textContent = "已用 " + game.steps + " / 上限 " + game.maxSteps + " 步";
-    pipsEl.innerHTML = "";
-    for (var p = 0; p < game.maxSteps; p++) {
-      var pip = document.createElement("div");
-      pip.className = "pip" + (p < game.steps ? " used" : "");
-      pipsEl.appendChild(pip);
-    }
-    targetSwatch.style.setProperty("--tc", PALETTE[game.targetColor].color);
-    targetName.textContent = PALETTE[game.targetColor].name + "色";
-  }
-
-  function updateInfo() {
-    var obs = 0;
-    for (var i = 0; i < level.grid.length; i++) if (level.grid[i] === Core.OBSTACLE) obs++;
-    infoLine.textContent = "難度 " + DIFF_NAMES[difficulty] + " ・ 盤面 " + level.w + "×" + level.h +
-      " ・ 障礙物 " + obs + " 格 ・ 最佳解 " + level.par + " 步";
-  }
-
-  // 先選色：只更新「選中」的顏色，不動盤面
-  function armColor(c) {
-    if (!level || c < 0 || c >= level.colors) return;
-    armedColor = c;
-    for (var i = 0; i < colorBtns.length; i++) colorBtns[i].classList.toggle("current", i === armedColor);
-  }
-
-  // 點格：用選中的顏色染被點格所屬的區塊
-  function cellClick(x, y) {
-    if (!game || game.status !== "playing") return;
-    doMove(armedColor, x, y);
-  }
-
-  // 實際套用一步（供點擊、提示重播、自動化測試共用）
-  function doMove(color, x, y) {
-    if (!game) return null;
-    var res = Core.applyMove(game, color, x, y);
-    if (!res) return null; // 非法：點到障礙、選到同色、或越界
-    clearPreview();
-    sndMove(res.absorbed.length > 0);
-    animateMove(res);
-    updatePanel(true);
-    if (res.status !== "playing") {
-      clearTimeout(overlayTimer);
-      overlayTimer = setTimeout(function () { showOverlay(res); }, res.maxD * WAVE + 620);
-    }
-    return res;
-  }
-
-  // hover 預覽：把被點格所屬的同色區塊描邊，讓玩家看清會染到哪些格
-  function setPreview(x, y) {
-    if (!game || game.status !== "playing") return;
-    clearPreview();
-    if (game.grid[Core.idx(game.w, x, y)] === Core.OBSTACLE) return;
-    var zone = Core.floodZone(game.grid, game.w, game.h, x, y);
-    for (var k = 0; k < zone.length; k++) {
-      var el = cellEls[zone[k]];
-      if (el) { el.classList.add("preview"); previewEls.push(el); }
-    }
-  }
-  function clearPreview() {
-    for (var k = 0; k < previewEls.length; k++) previewEls[k].classList.remove("preview");
-    previewEls = [];
-  }
-  function pulseCell(x, y) {
-    var el = cellEls[Core.idx(game.w, x, y)];
-    if (!el) return;
-    el.classList.remove("hint-cell");
-    void el.offsetWidth;
-    el.classList.add("hint-cell");
-    setTimeout(function () { el.classList.remove("hint-cell"); }, 1700);
-  }
-
-  function animateMove(res) {
-    clearTimeout(cleanupTimer);
-    var cells = res.recolored.concat(res.absorbed);
-    var newColor = PALETTE[res.newColor].color;
-    for (var k = 0; k < cells.length; k++) {
-      var el = cellEls[cells[k].i];
-      var delay = cells[k].d * WAVE;
-      el.classList.remove("enter", "wave");
-      void el.offsetWidth; // 強制重排，讓 wave 動畫可以重新觸發
-      el.style.transitionDelay = delay + "ms";
-      el.style.animationDelay = delay + "ms";
-      el.style.backgroundColor = newColor;
-      el.classList.add("wave");
-    }
-    cleanupTimer = setTimeout(function () {
-      for (var k = 0; k < cells.length; k++) {
-        var el = cellEls[cells[k].i];
-        el.style.transitionDelay = "0ms";
-        el.style.animationDelay = "0ms";
-        el.classList.remove("wave");
+      function sndMove(absorbedAny) {
+        drop(520, 0.16, 0);                      // 主水滴
+        if (absorbedAny) drop(720, 0.08, 0.09);  // 吞併越多，多一顆較細的回響水珠
       }
-    }, res.maxD * WAVE + 480);
-    spawnRing(res);
-  }
+      function sndWin() {
+        [523, 659, 784, 1047].forEach(function (f, i) { tone(f, f, 0.32, "triangle", 0.11, i * 0.13); });
+      }
+      function sndLose() {
+        tone(230, 140, 0.4, "sawtooth", 0.06);
+        tone(170, 105, 0.5, "sawtooth", 0.05, 0.16);
+      }
 
-  function spawnRing(res) {
-    var startEl = cellEls[Core.idx(game.w, res.cx, res.cy)]; // 波紋自被點格擴散
-    var wr = boardWrap.getBoundingClientRect();
-    var cr = startEl.getBoundingClientRect();
-    var ring = document.createElement("div");
-    ring.className = "ring";
-    ring.style.left = (cr.left - wr.left + cr.width / 2) + "px";
-    ring.style.top = (cr.top - wr.top + cr.height / 2) + "px";
-    ring.style.borderColor = PALETTE[res.newColor].color;
-    boardWrap.appendChild(ring);
-    var size = (res.maxD + 1.5) * cr.width * 2;
-    var anim = ring.animate(
-      [{ width: "10px", height: "10px", opacity: 0.9 },
-       { width: size + "px", height: size + "px", opacity: 0 }],
-      { duration: res.maxD * WAVE + 380, easing: "cubic-bezier(.25,.6,.3,1)" }
-    );
-    anim.onfinish = function () { ring.remove(); };
-  }
+      // ---------- 背景音樂（使用者提供的 Music.mp3，Suno 生成；循環播放） ----------
+      var BGM_SRC = "Music.mp3";     // 檔名大小寫需與實際檔案一致（跨平台安全）
+      var BGM_VOL = 0.2;             // 目標音量（0–1）
+      var bgm = null, bgmFade = null;
 
-  function showOverlay(res) {
-    card.className = "card " + (res.status === "won" ? "win" : "lose");
-    if (res.status === "won") {
-      cardTitle.textContent = "挑戰成功";
-      cardDesc.textContent = "以 " + game.steps + " 步完成染色（上限 " + game.maxSteps + " 步）";
-      cardPrimary.textContent = "下一關";
-      cardSecondary.textContent = "重玩本關";
-      cardPrimary.onclick = newLevel;
-      cardSecondary.onclick = restart;
-      spawnConfetti();
-      sndWin();
-    } else {
-      cardTitle.textContent = "步數用盡";
-      cardDesc.textContent = "畫布尚未完全染成" + PALETTE[game.targetColor].name + "色，再試一次吧";
-      cardPrimary.textContent = "重試本關";
-      cardSecondary.textContent = "新關卡";
-      cardPrimary.onclick = restart;
-      cardSecondary.onclick = newLevel;
-      sndLose();
-    }
-    overlay.classList.add("show");
-  }
+      function ensureBgm() {
+        if (bgm) return bgm;
+        bgm = new Audio(BGM_SRC);
+        bgm.loop = true;
+        bgm.preload = "auto";
+        bgm.volume = 0;
+        return bgm;
+      }
+      function fadeBgm(to, ms, onDone) {
+        clearInterval(bgmFade);
+        var from = bgm ? bgm.volume : 0;
+        var steps = Math.max(1, Math.round(ms / 50)), i = 0;
+        bgmFade = setInterval(function () {
+          i++;
+          if (bgm) bgm.volume = Math.max(0, Math.min(1, from + (to - from) * (i / steps)));
+          if (i >= steps) { clearInterval(bgmFade); if (onDone) onDone(); }
+        }, 50);
+      }
+      function startMusic() {
+        if (!musicOn) return;
+        ensureBgm();
+        var p = bgm.play();
+        if (p && p.catch) p.catch(function () { }); // 尚未取得播放許可／檔案缺失時靜默失敗
+        fadeBgm(BGM_VOL, 1500);       // 緩緩淡入
+      }
+      function stopMusic() {
+        if (!bgm) return;
+        fadeBgm(0, 800, function () { try { bgm.pause(); } catch (e) { } }); // 淡出後暫停
+      }
 
-  function hideOverlay() {
-    clearTimeout(overlayTimer);
-    overlay.classList.remove("show");
-  }
+      function newLevel() {
+        var preset = Object.assign({}, Core.PRESETS[difficulty]);
+        level = Core.generateLevel(preset) || Core.generateLevel(Object.assign(preset, { attempts: 300 }));
+        game = Core.createGame(level);
+        armedColor = 0;
+        buildBoard(true);
+        buildColorButtons();
+        updatePanel(false);
+        updateInfo();
+        hideOverlay();
+      }
 
-  function spawnConfetti() {
-    for (var i = 0; i < 70; i++) {
-      var d = document.createElement("div");
-      d.className = "confetti";
-      d.style.background = PALETTE[(Math.random() * PALETTE.length) | 0].color;
-      document.body.appendChild(d);
-      var ang = Math.random() * Math.PI * 2;
-      var dist = 90 + Math.random() * 320;
-      var dx = Math.cos(ang) * dist;
-      var dy = Math.sin(ang) * dist * 0.7 + 180 + Math.random() * 160;
-      var rot = (Math.random() * 900 - 450) | 0;
-      var anim = d.animate(
-        [{ transform: "translate(0,0) rotate(0deg)", opacity: 1 },
-         { transform: "translate(" + dx + "px,-" + (60 + Math.random() * 120) + "px) rotate(" + (rot / 2) + "deg)", opacity: 1, offset: 0.35 },
-         { transform: "translate(" + (dx * 1.3) + "px," + dy + "px) rotate(" + rot + "deg)", opacity: 0 }],
-        { duration: 1100 + Math.random() * 700, easing: "cubic-bezier(.2,.6,.4,1)" }
-      );
-      anim.onfinish = (function (el) { return function () { el.remove(); }; })(d);
-    }
-  }
+      function restart() {
+        game = Core.createGame(level);
+        armedColor = 0;
+        buildBoard(true);
+        updatePanel(false);
+        hideOverlay();
+      }
 
-  function toast(msg) {
-    toastEl.textContent = msg;
-    toastEl.classList.add("show");
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { toastEl.classList.remove("show"); }, 2400);
-  }
+      function buildBoard(entrance) {
+        clearTimeout(cleanupTimer);
+        previewEls = [];
+        boardEl.innerHTML = "";
+        boardEl.classList.add("playable");
+        boardEl.style.gridTemplateColumns = "repeat(" + level.w + ", 1fr)";
+        cellEls = [];
+        var cx0 = (level.w - 1) / 2, cy0 = (level.h - 1) / 2; // 入場動畫由畫布中心向外
+        for (var i = 0; i < level.w * level.h; i++) {
+          var el = document.createElement("div");
+          el.className = "cell";
+          var v = game.grid[i];
+          var x = i % level.w, y = (i / level.w) | 0;
+          if (v === Core.OBSTACLE) {
+            el.classList.add("obstacle");
+          } else {
+            el.style.backgroundColor = PALETTE[v].color;
+          }
+          if (entrance) {
+            el.style.animationDelay = ((Math.abs(x - cx0) + Math.abs(y - cy0)) * 16) + "ms";
+            el.classList.add("enter");
+            el.addEventListener("animationend", function () {
+              this.classList.remove("enter");
+              this.style.animationDelay = "0ms";
+            }, { once: true });
+          }
+          (function (x, y) {
+            el.addEventListener("click", function () { cellClick(x, y); });
+            el.addEventListener("pointerenter", function () { setPreview(x, y); });
+          })(x, y);
+          boardEl.appendChild(el);
+          cellEls.push(el);
+        }
+        boardEl.onpointerleave = clearPreview;
+      }
 
-  function hint() {
-    if (!game || game.status !== "playing") return;
-    var sol = Core.solve(game.grid, game.w, game.h, { target: game.targetColor });
-    if (!sol || !sol.moves.length) { toast("目前無法計算提示"); return; }
-    var mv = sol.moves[0];
-    var left = game.maxSteps - game.steps;
-    if (sol.steps > left) {
-      toast("剩餘步數已不足以完成（最少還需 " + sol.steps + " 步），建議重新開始");
-      return;
-    }
-    armColor(mv.color);        // 幫玩家選好建議的顏色
-    var b = colorBtns[mv.color];
-    b.classList.remove("hint-flash");
-    void b.offsetWidth;
-    b.classList.add("hint-flash");
-    pulseCell(mv.x, mv.y);     // 在盤面標出建議要點的格子
-    toast("建議：選" + PALETTE[mv.color].name + "色，點閃爍的格子（最快 " + sol.steps + " 步完成）");
-  }
+      function buildColorButtons() {
+        colorsEl.innerHTML = "";
+        colorBtns = [];
+        for (var c = 0; c < level.colors; c++) {
+          (function (c) {
+            var b = document.createElement("button");
+            b.className = "color-btn";
+            b.style.setProperty("--c", PALETTE[c].color);
+            b.innerHTML =
+              '<span class="swatch"></span><span class="cname">' + PALETTE[c].name + "</span>" +
+              '<span class="right"><span class="badge">選中</span><kbd>' + (c + 1) + "</kbd></span>";
+            b.addEventListener("click", function () { armColor(c); });
+            colorsEl.appendChild(b);
+            colorBtns.push(b);
+          })(c);
+        }
+      }
 
-  // ---------- 事件 ----------
-  $("restartBtn").addEventListener("click", restart);
-  $("newBtn").addEventListener("click", newLevel);
-  $("hintBtn").addEventListener("click", hint);
+      function updatePanel(animateSteps) {
+        var playing = game.status === "playing";
+        for (var c = 0; c < colorBtns.length; c++) {
+          colorBtns[c].classList.toggle("current", c === armedColor); // 標出「選中」的顏色
+          colorBtns[c].disabled = !playing;
+        }
+        var left = game.maxSteps - game.steps;
+        stepsNum.textContent = left;
+        stepsNum.classList.toggle("warn", left === 2);
+        stepsNum.classList.toggle("danger", left <= 1);
+        if (animateSteps) {
+          stepsNum.classList.remove("bump");
+          void stepsNum.offsetWidth;
+          stepsNum.classList.add("bump");
+        }
+        stepsCap.textContent = "已用 " + game.steps + " / 上限 " + game.maxSteps + " 步";
+        pipsEl.innerHTML = "";
+        for (var p = 0; p < game.maxSteps; p++) {
+          var pip = document.createElement("div");
+          pip.className = "pip" + (p < game.steps ? " used" : "");
+          pipsEl.appendChild(pip);
+        }
+        targetSwatch.style.setProperty("--tc", PALETTE[game.targetColor].color);
+        targetName.textContent = PALETTE[game.targetColor].name + "色";
+      }
 
-  var soundBtn = $("soundBtn");
-  soundBtn.textContent = audioOn ? "🔊" : "🔇";
-  soundBtn.addEventListener("click", function () {
-    audioOn = !audioOn;
-    soundBtn.textContent = audioOn ? "🔊" : "🔇";
-    try { localStorage.setItem("inkflow-sound", audioOn ? "1" : "0"); } catch (e) {}
-    if (audioOn) tone(660, 660, 0.1, "sine", 0.07);
-  });
+      function updateInfo() {
+        var obs = 0;
+        for (var i = 0; i < level.grid.length; i++) if (level.grid[i] === Core.OBSTACLE) obs++;
+        infoLine.textContent = "難度 " + DIFF_NAMES[difficulty] + " ・ 盤面 " + level.w + "×" + level.h +
+          " ・ 障礙物 " + obs + " 格 ・ 最佳解 " + level.par + " 步";
+      }
 
-  var segBtns = document.querySelectorAll("#diffSeg button");
-  segBtns.forEach(function (b) {
-    b.addEventListener("click", function () {
-      if (b.dataset.diff === difficulty) return;
-      difficulty = b.dataset.diff;
-      segBtns.forEach(function (x) { x.classList.toggle("active", x === b); });
+      // 先選色：只更新「選中」的顏色，不動盤面
+      function armColor(c) {
+        if (!level || c < 0 || c >= level.colors) return;
+        armedColor = c;
+        for (var i = 0; i < colorBtns.length; i++) colorBtns[i].classList.toggle("current", i === armedColor);
+      }
+
+      // 點格：用選中的顏色染被點格所屬的區塊
+      function cellClick(x, y) {
+        if (!game || game.status !== "playing") return;
+        doMove(armedColor, x, y);
+      }
+
+      // 實際套用一步（供點擊、提示重播、自動化測試共用）
+      function doMove(color, x, y) {
+        if (!game) return null;
+        var res = Core.applyMove(game, color, x, y);
+        if (!res) return null; // 非法：點到障礙、選到同色、或越界
+        clearPreview();
+        sndMove(res.absorbed.length > 0);
+        animateMove(res);
+        updatePanel(true);
+        if (res.status !== "playing") {
+          clearTimeout(overlayTimer);
+          overlayTimer = setTimeout(function () { showOverlay(res); }, res.maxD * WAVE + 620);
+        }
+        return res;
+      }
+
+      // hover 預覽：把被點格所屬的同色區塊描邊，讓玩家看清會染到哪些格
+      function setPreview(x, y) {
+        if (!game || game.status !== "playing") return;
+        clearPreview();
+        if (game.grid[Core.idx(game.w, x, y)] === Core.OBSTACLE) return;
+        var zone = Core.floodZone(game.grid, game.w, game.h, x, y);
+        for (var k = 0; k < zone.length; k++) {
+          var el = cellEls[zone[k]];
+          if (el) { el.classList.add("preview"); previewEls.push(el); }
+        }
+      }
+      function clearPreview() {
+        for (var k = 0; k < previewEls.length; k++) previewEls[k].classList.remove("preview");
+        previewEls = [];
+      }
+      function pulseCell(x, y) {
+        var el = cellEls[Core.idx(game.w, x, y)];
+        if (!el) return;
+        el.classList.remove("hint-cell");
+        void el.offsetWidth;
+        el.classList.add("hint-cell");
+        setTimeout(function () { el.classList.remove("hint-cell"); }, 1700);
+      }
+
+      function animateMove(res) {
+        clearTimeout(cleanupTimer);
+        var cells = res.recolored.concat(res.absorbed);
+        var newColor = PALETTE[res.newColor].color;
+        for (var k = 0; k < cells.length; k++) {
+          var el = cellEls[cells[k].i];
+          var delay = cells[k].d * WAVE;
+          el.classList.remove("enter", "wave");
+          void el.offsetWidth; // 強制重排，讓 wave 動畫可以重新觸發
+          el.style.transitionDelay = delay + "ms";
+          el.style.animationDelay = delay + "ms";
+          el.style.backgroundColor = newColor;
+          el.classList.add("wave");
+        }
+        cleanupTimer = setTimeout(function () {
+          for (var k = 0; k < cells.length; k++) {
+            var el = cellEls[cells[k].i];
+            el.style.transitionDelay = "0ms";
+            el.style.animationDelay = "0ms";
+            el.classList.remove("wave");
+          }
+        }, res.maxD * WAVE + 480);
+        spawnRing(res);
+      }
+
+      // 落墨暈染：從被點格暈開一團柔邊墨，像顏料在濕紙上化開（疊在逐格波紋之上）
+      function spawnRing(res) {
+        if (!ANIM) return;
+        var startEl = cellEls[Core.idx(game.w, res.cx, res.cy)];
+        var wr = boardWrap.getBoundingClientRect();
+        var cr = startEl.getBoundingClientRect();
+        var cx = cr.left - wr.left + cr.width / 2;
+        var cy = cr.top - wr.top + cr.height / 2;
+        var col = PALETTE[res.newColor].color;
+        var size = (res.maxD + 2.2) * cr.width * 1.7;
+        for (var b = 0; b < 2; b++) {
+          var d = document.createElement("div");
+          d.className = "ink-bloom";
+          d.style.left = cx + "px"; d.style.top = cy + "px";
+          d.style.width = size + "px"; d.style.height = size + "px";
+          d.style.background = "radial-gradient(circle, " + col + " 0%, " + col + "88 32%, transparent 68%)";
+          boardWrap.appendChild(d);
+          (function (el, b) {
+            anime({
+              targets: el,
+              translateX: ["-50%", "-50%"], translateY: ["-50%", "-50%"],
+              scale: [0.06, 1 + b * 0.14],
+              opacity: [{ value: 0.5 - b * 0.14, duration: 130 }, { value: 0, duration: res.maxD * WAVE + 560 }],
+              easing: "easeOutQuad",
+              duration: res.maxD * WAVE + 700,
+              delay: b * 100,
+              complete: function () { el.remove(); }
+            });
+          })(d, b);
+        }
+      }
+
+      function showOverlay(res) {
+        card.className = "card " + (res.status === "won" ? "win" : "lose");
+        if (res.status === "won") {
+          cardTitle.textContent = "挑戰成功";
+          cardDesc.textContent = "以 " + game.steps + " 步完成染色（上限 " + game.maxSteps + " 步）";
+          cardPrimary.textContent = "下一關";
+          cardSecondary.textContent = "重玩本關";
+          cardPrimary.onclick = newLevel;
+          cardSecondary.onclick = restart;
+          inkSplash();
+          sndWin();
+        } else {
+          cardTitle.textContent = "步數用盡";
+          cardDesc.textContent = "畫布尚未完全染成" + PALETTE[game.targetColor].name + "色，再試一次吧";
+          cardPrimary.textContent = "重試本關";
+          cardSecondary.textContent = "新關卡";
+          cardPrimary.onclick = restart;
+          cardSecondary.onclick = newLevel;
+          inkWashAway();
+          sndLose();
+        }
+        overlay.classList.add("show");
+      }
+
+      function hideOverlay() {
+        clearTimeout(overlayTimer);
+        overlay.classList.remove("show");
+      }
+
+      // 潑墨結算：勝利時噴出墨點與顏料點，再飄下幾片花瓣
+      function inkSplash() {
+        if (!ANIM) return;
+        var cx = window.innerWidth / 2, cy = window.innerHeight * 0.42;
+        for (var i = 0; i < 46; i++) {
+          var d = document.createElement("div");
+          d.className = "confetti";
+          d.style.background = Math.random() < 0.4 ? "rgba(38,32,25,.92)" : PALETTE[(Math.random() * PALETTE.length) | 0].color;
+          var sz = 4 + Math.random() * 12;
+          d.style.width = sz + "px"; d.style.height = sz + "px";
+          d.style.left = cx + "px"; d.style.top = cy + "px";
+          document.body.appendChild(d);
+          var ang = Math.random() * Math.PI * 2, dist = 60 + Math.random() * 360;
+          (function (el) {
+            anime({
+              targets: el,
+              translateX: Math.cos(ang) * dist,
+              translateY: Math.sin(ang) * dist * 0.8 + 50,
+              scale: [{ value: 1, duration: 120 }, { value: Math.random() < 0.5 ? 1.5 : 0.5, duration: 950 }],
+              opacity: [{ value: 1, duration: 80 }, { value: 0, duration: 950 + Math.random() * 500 }],
+              easing: "easeOutCubic", duration: 1000 + Math.random() * 700,
+              complete: function () { el.remove(); }
+            });
+          })(d);
+        }
+        for (var p = 0; p < 14; p++) {
+          var el = document.createElement("div");
+          el.className = "petal";
+          el.style.background = Math.random() < 0.5 ? "rgba(206,150,150,.85)" : "rgba(124,182,176,.75)";
+          el.style.left = (cx + (Math.random() * 320 - 160)) + "px";
+          el.style.top = (cy - 40) + "px";
+          document.body.appendChild(el);
+          (function (el) {
+            anime({
+              targets: el,
+              translateY: window.innerHeight * 0.5 + Math.random() * 180,
+              translateX: (Math.random() * 180 - 90),
+              rotate: Math.random() * 400 - 200,
+              opacity: [{ value: 0.9, duration: 220 }, { value: 0, duration: 1700 }],
+              easing: "easeInOutSine", duration: 1900 + Math.random() * 1200, delay: Math.random() * 320,
+              complete: function () { el.remove(); }
+            });
+          })(el);
+        }
+      }
+
+      // 失敗：一團淡墨自畫布中央暈開又散去，像畫作被水化開
+      function inkWashAway() {
+        if (!ANIM) return;
+        var wr = boardWrap.getBoundingClientRect();
+        var d = document.createElement("div");
+        d.className = "ink-bloom";
+        d.style.left = "50%"; d.style.top = "50%";
+        var sz = wr.width * 1.6;
+        d.style.width = sz + "px"; d.style.height = sz + "px";
+        d.style.background = "radial-gradient(circle, rgba(40,32,22,.55) 0%, rgba(40,32,22,.22) 45%, transparent 70%)";
+        boardWrap.appendChild(d);
+        anime({
+          targets: d, translateX: ["-50%", "-50%"], translateY: ["-50%", "-50%"], scale: [0.1, 1],
+          opacity: [{ value: 0.8, duration: 520 }, { value: 0, duration: 900 }],
+          easing: "easeOutQuad", duration: 1420, complete: function () { d.remove(); }
+        });
+      }
+
+      // 天青水氣：背景兩團極淡的天青緩緩漂移、明滅，像雨過天青的水氣
+      function startAmbient() {
+        if (!ANIM) return;
+        var blobs = document.querySelectorAll("#ambient span");
+        var vw = window.innerWidth, vh = window.innerHeight, big = Math.max(vw, vh) * 0.72;
+        blobs.forEach(function (el, i) {
+          el.style.width = el.style.height = big + "px";
+          el.style.left = (18 + i * 42) + "%"; el.style.top = (18 + i * 30) + "%";
+          el.style.opacity = "0.2"; // 立刻可見，drift 只負責緩慢明滅/漂移
+          (function drift() {
+            anime({
+              targets: el,
+              translateX: anime.random(-vw * 0.22, vw * 0.22),
+              translateY: anime.random(-vh * 0.18, vh * 0.28),
+              scale: anime.random(80, 122) / 100,
+              opacity: anime.random(16, 28) / 100,
+              easing: "easeInOutSine",
+              duration: 11000 + Math.random() * 7000,
+              complete: drift
+            });
+          })();
+        });
+      }
+
+      // 題字滲墨：載入時「墨染天青」如濕墨滲入宣紙般逐字浮現
+      function titleBleedIn() {
+        var chars = [].slice.call(document.querySelectorAll("h1 .ch"));
+        if (!ANIM || !chars.length) return;
+        chars.forEach(function (ch) { ch.style.opacity = 0; ch.style.filter = "blur(7px)"; });
+        anime({
+          targets: chars,
+          opacity: [0, 1],
+          translateY: [7, 0],
+          scale: [1.1, 1],
+          easing: "easeOutQuad",
+          duration: 900,
+          delay: anime.stagger(120, { start: 150 }),
+          update: function () {
+            chars.forEach(function (ch) {
+              var o = parseFloat(getComputedStyle(ch).opacity) || 0;
+              ch.style.filter = "blur(" + ((1 - o) * 7).toFixed(2) + "px)";
+            });
+          },
+          complete: function () { chars.forEach(function (ch) { ch.style.filter = "none"; }); }
+        });
+        anime({ targets: "h1 .en", opacity: [0, 1], easing: "easeOutQuad", duration: 900, delay: 720 });
+        // 保險：即使動畫因環境未跑完，1.6s 後也一定完整顯示
+        setTimeout(function () {
+          chars.forEach(function (ch) { ch.style.opacity = 1; ch.style.filter = "none"; ch.style.transform = "none"; });
+        }, 1600);
+      }
+
+      function toast(msg) {
+        toastEl.textContent = msg;
+        toastEl.classList.add("show");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(function () { toastEl.classList.remove("show"); }, 2400);
+      }
+
+      function hint() {
+        if (!game || game.status !== "playing") return;
+        var sol = Core.solve(game.grid, game.w, game.h, { target: game.targetColor });
+        if (!sol || !sol.moves.length) { toast("目前無法計算提示"); return; }
+        var mv = sol.moves[0];
+        var left = game.maxSteps - game.steps;
+        if (sol.steps > left) {
+          toast("剩餘步數已不足以完成（最少還需 " + sol.steps + " 步），建議重新開始");
+          return;
+        }
+        armColor(mv.color);        // 幫玩家選好建議的顏色
+        var b = colorBtns[mv.color];
+        b.classList.remove("hint-flash");
+        void b.offsetWidth;
+        b.classList.add("hint-flash");
+        pulseCell(mv.x, mv.y);     // 在盤面標出建議要點的格子
+        toast("建議：選" + PALETTE[mv.color].name + "色，點閃爍的格子（最快 " + sol.steps + " 步完成）");
+      }
+
+      // ---------- 事件 ----------
+      $("restartBtn").addEventListener("click", restart);
+      $("newBtn").addEventListener("click", newLevel);
+      $("hintBtn").addEventListener("click", hint);
+
+      var soundBtn = $("soundBtn");
+      soundBtn.textContent = audioOn ? "🔊" : "🔇";
+      soundBtn.addEventListener("click", function () {
+        audioOn = !audioOn;
+        soundBtn.textContent = audioOn ? "🔊" : "🔇";
+        try { localStorage.setItem("inkflow-sound", audioOn ? "1" : "0"); } catch (e) { }
+        if (audioOn) tone(660, 660, 0.1, "sine", 0.07);
+      });
+
+      var musicBtn = $("musicBtn");
+      musicBtn.classList.toggle("off", !musicOn);
+      musicBtn.addEventListener("click", function () {
+        musicOn = !musicOn;
+        musicBtn.classList.toggle("off", !musicOn);
+        try { localStorage.setItem("inkflow-music", musicOn ? "1" : "0"); } catch (e) { }
+        if (musicOn) startMusic(); else stopMusic();
+      });
+
+      // 瀏覽器禁止自動播放：第一次使用者互動時才啟動背景音樂
+      function kickMusic() {
+        if (musicKicked) return; musicKicked = true;
+        if (musicOn) startMusic();
+      }
+      window.addEventListener("pointerdown", kickMusic);
+      window.addEventListener("keydown", kickMusic);
+
+      var segBtns = document.querySelectorAll("#diffSeg button");
+      segBtns.forEach(function (b) {
+        b.addEventListener("click", function () {
+          if (b.dataset.diff === difficulty) return;
+          difficulty = b.dataset.diff;
+          segBtns.forEach(function (x) { x.classList.toggle("active", x === b); });
+          newLevel();
+        });
+      });
+
+      document.addEventListener("keydown", function (e) {
+        if (e.repeat) return;
+        var k = e.key.toLowerCase();
+        if (k >= "1" && k <= "9") {
+          var c = parseInt(k, 10) - 1;
+          if (level && c < level.colors) armColor(c);
+        } else if (k === "r") restart();
+        else if (k === "n") newLevel();
+        else if (k === "h") hint();
+      });
+
+      // 允許 #easy / #normal / #hard 指定初始難度
+      var hashDiff = location.hash.replace("#", "");
+      if (Core.PRESETS[hashDiff]) {
+        difficulty = hashDiff;
+        segBtns.forEach(function (x) { x.classList.toggle("active", x.dataset.diff === hashDiff); });
+      }
+
       newLevel();
-    });
-  });
+      titleBleedIn();
+      startAmbient();
 
-  document.addEventListener("keydown", function (e) {
-    if (e.repeat) return;
-    var k = e.key.toLowerCase();
-    if (k >= "1" && k <= "9") {
-      var c = parseInt(k, 10) - 1;
-      if (level && c < level.colors) armColor(c);
-    } else if (k === "r") restart();
-    else if (k === "n") newLevel();
-    else if (k === "h") hint();
-  });
+      // 除錯／自動化測試掛鉤（不影響一般遊玩）
+      window.__inkflow = {
+        get game() { return game; },
+        get level() { return level; },
+        get armed() { return armedColor; },
+        armColor: armColor, doMove: doMove, newLevel: newLevel, restart: restart, hint: hint
+      };
 
-  // 允許 #easy / #normal / #hard 指定初始難度
-  var hashDiff = location.hash.replace("#", "");
-  if (Core.PRESETS[hashDiff]) {
-    difficulty = hashDiff;
-    segBtns.forEach(function (x) { x.classList.toggle("active", x.dataset.diff === hashDiff); });
-  }
+      // 視覺驗證用掛鉤（headless 截圖）
+      if (location.hash === "#winshot") {
+        setTimeout(function () { game.status = "won"; updatePanel(false); showOverlay({ status: "won" }); }, 300);
+      }
+      if (location.hash === "#loseshot") {
+        setTimeout(function () { game.status = "lost"; updatePanel(false); showOverlay({ status: "lost" }); }, 300);
+      }
+      if (location.hash === "#waveshot") {
+        setTimeout(function () { var m = level.solution[0]; doMove(m.color, m.x, m.y); }, 250);
+      }
+      // 驗證背景音樂能否載入（headless：需搭配 --autoplay-policy=no-user-gesture-required）
+      if (location.hash === "#musictest") {
+        setTimeout(function () {
+          musicKicked = true;
+          var err = "";
+          try { startMusic(); } catch (e) { err = e.message; }
+          if (!bgm) { document.title = "MUSIC:FAIL " + err; return; }
+          bgm.addEventListener("canplaythrough", function () { document.title = "MUSIC:OK"; }, { once: true });
+          bgm.addEventListener("error", function () { document.title = "MUSIC:ERR (Music.mp3 載入失敗)"; }, { once: true });
+          setTimeout(function () { if (document.title.indexOf("MUSIC:") !== 0) document.title = "MUSIC:PENDING"; }, 2500);
+        }, 200);
+      }
 
-  newLevel();
-
-  // 除錯／自動化測試掛鉤（不影響一般遊玩）
-  window.__inkflow = {
-    get game() { return game; },
-    get level() { return level; },
-    get armed() { return armedColor; },
-    armColor: armColor, doMove: doMove, newLevel: newLevel, restart: restart, hint: hint
-  };
-
-  // 視覺驗證用掛鉤（headless 截圖）
-  if (location.hash === "#winshot") {
-    setTimeout(function () { game.status = "won"; updatePanel(false); showOverlay({ status: "won" }); }, 300);
-  }
-  if (location.hash === "#loseshot") {
-    setTimeout(function () { game.status = "lost"; updatePanel(false); showOverlay({ status: "lost" }); }, 300);
-  }
-  if (location.hash === "#waveshot") {
-    setTimeout(function () { var m = level.solution[0]; doMove(m.color, m.x, m.y); }, 250);
-  }
-
-  // 以 #autotest 開啟頁面時自動打完整關並輸出結果（headless 驗證用）
-  if (location.hash === "#autotest") {
-    var results = [];
-    function assert(name, cond) { results.push((cond ? "PASS " : "FAIL ") + name); }
-    var queue = [];
-    function later(ms, fn) { queue.push([ms, fn]); }
-    function run() {
-      if (!queue.length) return finish();
-      var job = queue.shift();
-      setTimeout(function () { job[1](); run(); }, job[0]);
-    }
-    function finish() {
-      var fail = results.some(function (r) { return r.indexOf("FAIL") === 0; });
-      var pre = document.createElement("pre");
-      pre.id = "testlog";
-      pre.style.display = "none";
-      pre.textContent = results.join("\n");
-      document.body.appendChild(pre);
-      document.title = fail ? "TEST:FAIL" : "TEST:PASS";
-    }
-    later(100, function () {
-      hint();
-      assert("提示後 toast 顯示", toastEl.classList.contains("show"));
-    });
-    later(200, function () {
-      var mv = level.solution[0];
-      var cur = game.grid[Core.idx(game.w, mv.x, mv.y)];
-      var wrong = (cur + 1) % level.colors; // 與被點格不同色，保證是合法一手
-      doMove(wrong, mv.x, mv.y);
-      assert("下一手後步數=1", game.steps === 1);
-    });
-    later(200, function () {
-      restart();
-      assert("重試後步數歸零", game.steps === 0 && game.status === "playing");
-    });
-    later(200, function () {
-      var moves = level.solution.slice();
-      moves.forEach(function (mv) { later(120, function () { doMove(mv.color, mv.x, mv.y); }); });
-      later(1600, function () {
-        assert("照官方解打完 → 勝利", game.status === "won");
-        assert("步數 = 上限", game.steps === game.maxSteps);
-        var allTarget = true;
-        for (var i = 0; i < game.grid.length; i++) {
-          if (game.grid[i] !== Core.OBSTACLE && game.grid[i] !== game.targetColor) allTarget = false;
+      // 以 #autotest 開啟頁面時自動打完整關並輸出結果（headless 驗證用）
+      if (location.hash === "#autotest") {
+        var results = [];
+        function assert(name, cond) { results.push((cond ? "PASS " : "FAIL ") + name); }
+        var queue = [];
+        function later(ms, fn) { queue.push([ms, fn]); }
+        function run() {
+          if (!queue.length) return finish();
+          var job = queue.shift();
+          setTimeout(function () { job[1](); run(); }, job[0]);
         }
-        assert("全圖非障礙格 = 目標色", allTarget);
-        assert("勝利結算顯示", overlay.classList.contains("show") && card.className.indexOf("win") >= 0);
-      });
-      later(100, function () {
-        newLevel();
-        assert("新關卡後狀態重置", game.steps === 0 && game.status === "playing" && !overlay.classList.contains("show"));
-      });
-      later(100, function () {
-        // 亂點格子直到步數用盡（或碰巧獲勝），驗證結算會出現
-        var guard = 0;
-        while (game.status === "playing" && guard++ < 60) {
-          var i = (Math.random() * game.grid.length) | 0;
-          if (game.grid[i] === Core.OBSTACLE) continue;
-          var x = i % game.w, y = (i / game.w) | 0;
-          doMove((game.grid[i] + 1) % level.colors, x, y);
+        function finish() {
+          var fail = results.some(function (r) { return r.indexOf("FAIL") === 0; });
+          var pre = document.createElement("pre");
+          pre.id = "testlog";
+          pre.style.display = "none";
+          pre.textContent = results.join("\n");
+          document.body.appendChild(pre);
+          document.title = fail ? "TEST:FAIL" : "TEST:PASS";
         }
-        assert("步數用盡後遊戲結束", game.status !== "playing");
-        assert("結束後按鈕全部停用", colorBtns.every(function (b) { return b.disabled; }));
-      });
-      later(1600, function () {
-        assert("結算畫面顯示", overlay.classList.contains("show"));
-      });
-    });
-    run();
-  }
-})();
-</script>
+        later(100, function () {
+          hint();
+          assert("提示後 toast 顯示", toastEl.classList.contains("show"));
+        });
+        later(200, function () {
+          var mv = level.solution[0];
+          var cur = game.grid[Core.idx(game.w, mv.x, mv.y)];
+          var wrong = (cur + 1) % level.colors; // 與被點格不同色，保證是合法一手
+          doMove(wrong, mv.x, mv.y);
+          assert("下一手後步數=1", game.steps === 1);
+        });
+        later(200, function () {
+          restart();
+          assert("重試後步數歸零", game.steps === 0 && game.status === "playing");
+        });
+        later(200, function () {
+          var moves = level.solution.slice();
+          moves.forEach(function (mv) { later(120, function () { doMove(mv.color, mv.x, mv.y); }); });
+          later(4000, function () { // 結算會等染色動畫跑完才出現，故留足夠餘裕（WAVE 越大越久）
+            assert("照官方解打完 → 勝利", game.status === "won");
+            assert("步數 = 上限", game.steps === game.maxSteps);
+            var allTarget = true;
+            for (var i = 0; i < game.grid.length; i++) {
+              if (game.grid[i] !== Core.OBSTACLE && game.grid[i] !== game.targetColor) allTarget = false;
+            }
+            assert("全圖非障礙格 = 目標色", allTarget);
+            assert("勝利結算顯示", overlay.classList.contains("show") && card.className.indexOf("win") >= 0);
+          });
+          later(100, function () {
+            newLevel();
+            assert("新關卡後狀態重置", game.steps === 0 && game.status === "playing" && !overlay.classList.contains("show"));
+          });
+          later(100, function () {
+            // 亂點格子直到步數用盡（或碰巧獲勝），驗證結算會出現
+            var guard = 0;
+            while (game.status === "playing" && guard++ < 60) {
+              var i = (Math.random() * game.grid.length) | 0;
+              if (game.grid[i] === Core.OBSTACLE) continue;
+              var x = i % game.w, y = (i / game.w) | 0;
+              doMove((game.grid[i] + 1) % level.colors, x, y);
+            }
+            assert("步數用盡後遊戲結束", game.status !== "playing");
+            assert("結束後按鈕全部停用", colorBtns.every(function (b) { return b.disabled; }));
+          });
+          later(4000, function () { // 結算會等染色動畫跑完才出現，故留足夠餘裕（WAVE 越大越久）
+            assert("結算畫面顯示", overlay.classList.contains("show"));
+          });
+        });
+        run();
+      }
+    })();
+  </script>
 </body>
+
 </html>

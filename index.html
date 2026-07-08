@@ -467,13 +467,15 @@
 
     .actions {
       display: flex;
+      flex-wrap: wrap;
       gap: 8px;
     }
 
     .btn {
       padding: 9px 6px;
       border-radius: 6px;
-      flex: 1;
+      flex: 1 1 auto;
+      min-width: 60px;
       white-space: nowrap;
       border: 1px solid var(--ink-line);
       background: rgba(255, 255, 255, .24);

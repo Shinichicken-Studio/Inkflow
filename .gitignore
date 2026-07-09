@@ -1,0 +1,4 @@
+# 編輯前的備份檔（原名.bak-YYYYMMDD、.bak2-…、.bak3-… 等）
+*.bak
+*.bak-*
+*.bak[0-9]*-*

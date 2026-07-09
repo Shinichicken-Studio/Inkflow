@@ -10,29 +10,29 @@
   <style>
     /* ---------- 水墨主題 tokens（宣紙／墨／天青） ---------- */
     :root {
-      --paper: #ece2cf;
-      /* 宣紙底 */
-      --paper-2: #e5d9c1;
+      --paper: #ebe6da;
+      /* 宣紙底（中性化，貼近參考 Neutral） */
+      --paper-2: #e4ddce;
       /* 棋盤／控制台面 */
-      --paper-hi: #f5efe0;
-      /* 高光 */
-      --ink: #262019;
-      /* 濃墨（主文字） */
-      --ink-2: #4a4238;
+      --paper-hi: #f5f2ed;
+      /* 高光＝參考 Neutral #F5F2ED */
+      --ink: #1f1c19;
+      /* 濃墨（主文字）≈參考 Primary #1A1A1A */
+      --ink-2: #46423c;
       /* 次要文字 */
-      --ink-soft: #6b6252;
-      /* 淡墨（標籤、邊線字）；對宣紙底 ≥4.5:1 */
-      --ink-line: rgba(38, 32, 25, .20);
+      --ink-soft: #6a6660;
+      /* 淡墨（標籤、邊線字）≈參考 Secondary；對宣紙底 ≥4.5:1 */
+      --ink-line: rgba(31, 28, 25, .19);
       /* 墨線細框 */
       --celadon: #6ba3a0;
-      /* 天青 */
+      /* 天青（保留為重點色） */
       --celadon-2: #4f8783;
       /* 濃天青 */
-      --seal: #b23f2e;
-      /* 朱砂（印章、危險） */
+      --seal: #bc2f32;
+      /* 朱砂／參考 Tertiary #BC2F32（印章、危險） */
       --gamboge: #c69526;
       /* 藤黃（警示） */
-      --shadow: rgba(60, 45, 20, .20);
+      --shadow: rgba(45, 40, 33, .19);
       --paper-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.14'/%3E%3C/svg%3E");
     }
 
@@ -543,6 +543,259 @@
       line-height: 1.7;
     }
 
+    /* ---------- 開始畫面（封面） ---------- */
+    .cover {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 28px 20px;
+      text-align: center;
+      background:
+        var(--paper-noise),
+        radial-gradient(1200px 760px at 50% -8%, var(--paper-hi), transparent 60%),
+        radial-gradient(1100px 900px at 50% 118%, rgba(107, 163, 160, .12), transparent 55%),
+        var(--paper);
+      transition: opacity .6s ease;
+    }
+
+    .cover.hide {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    /* 滿版水墨山水背景圖：cover 裁切鋪滿，上緣用遮罩淡出溶進宣紙（題字浮在留白上） */
+    .cover-bg {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background: url("cover-bg.png") center 42% / cover no-repeat;
+      -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 16%, #000 88%, transparent 100%);
+      mask-image: linear-gradient(to bottom, transparent 0%, #000 16%, #000 88%, transparent 100%);
+    }
+
+    /* 深色模式：反相成暗底淡墨山水，融進墨底宣紙 */
+    @media (prefers-color-scheme: dark) {
+      .cover-bg {
+        filter: grayscale(1) invert(1) brightness(.86) contrast(1.05);
+      }
+    }
+
+    .cover-inner {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      max-width: 560px;
+    }
+
+    .cover-title {
+      font-size: clamp(46px, 15vw, 84px);
+      letter-spacing: clamp(8px, 5vw, 22px);
+      line-height: 1.1;
+      color: var(--ink);
+      font-weight: 600;
+      padding-left: clamp(8px, 5vw, 22px);
+      /* 補償字距造成的右偏，使題字視覺置中 */
+      font-family: "Kaiti TC", "KaiTi", "DFKai-SB", "BiauKai", "STKaiti", serif;
+    }
+
+    .cover-title .tq {
+      color: var(--celadon-2);
+    }
+
+    .cover-title .cch {
+      display: inline-block;
+      will-change: transform, opacity, filter;
+    }
+
+    .cover-en {
+      margin-top: 12px;
+      font-size: clamp(12px, 3.4vw, 15px);
+      letter-spacing: clamp(4px, 2.4vw, 9px);
+      color: var(--ink-soft);
+      font-family: "Segoe UI", sans-serif;
+    }
+
+    /* 朱砂印章：手蓋般的微傾直書小章 */
+    .cover-seal {
+      writing-mode: vertical-rl;
+      margin-top: 22px;
+      padding: 9px 6px;
+      font-size: 15px;
+      letter-spacing: 3px;
+      line-height: 1.15;
+      color: var(--paper-hi);
+      background: var(--seal);
+      border-radius: 4px;
+      box-shadow: 0 2px 6px var(--shadow), inset 0 0 0 1px rgba(255, 255, 255, .18);
+      transform: rotate(-3deg);
+      opacity: .92;
+      font-family: "Kaiti TC", "KaiTi", "DFKai-SB", "BiauKai", "STKaiti", serif;
+    }
+
+    /* 毛筆分隔線：淡入淡出的細墨線 */
+    .brush-divider {
+      margin-top: 20px;
+      width: clamp(140px, 34vw, 260px);
+      height: 1px;
+      background: linear-gradient(90deg, transparent 0%, var(--ink) 50%, transparent 100%);
+      opacity: .32;
+    }
+
+    /* 詩句副標：楷體、微斜、淡墨，像畫上的題款 */
+    .cover-poem {
+      margin-top: 20px;
+      color: var(--ink-2);
+      font-size: clamp(14px, 4vw, 18px);
+      letter-spacing: clamp(2px, 1.2vw, 5px);
+      font-style: italic;
+      line-height: 1.7;
+      max-width: 28em;
+      font-family: "Kaiti TC", "KaiTi", "DFKai-SB", "BiauKai", "STKaiti", serif;
+    }
+
+    .cover-diff {
+      margin-top: 28px;
+      width: min(280px, 82vw);
+    }
+
+    .cover-diff .label {
+      text-align: center;
+      margin-bottom: 8px;
+    }
+
+    .cover-start {
+      margin-top: 28px;
+      flex: none;
+      padding: 14px 44px 14px 50px;
+      /* 左側多 6px 補償字距右偏 */
+      font-size: 17px;
+      letter-spacing: 6px;
+      border-radius: 8px;
+    }
+
+    /* ---------- 通關數統計 ---------- */
+    /* 標題列＋「歸零」小鈕 */
+    .clears-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .clears-head .label {
+      margin-bottom: 0;
+    }
+
+    .mini-btn {
+      font-family: inherit;
+      font-size: 11px;
+      letter-spacing: 1px;
+      color: var(--ink-soft);
+      background: none;
+      border: 1px solid var(--ink-line);
+      border-radius: 4px;
+      padding: 2px 9px;
+      cursor: pointer;
+      transition: color .15s, border-color .15s, background .15s;
+    }
+
+    .mini-btn:hover {
+      color: var(--ink);
+      border-color: var(--celadon-2);
+    }
+
+    /* 兩段式確認：進入「確定歸零?」狀態時轉成朱砂警示 */
+    .mini-btn.arm {
+      color: var(--paper-hi);
+      background: var(--seal);
+      border-color: transparent;
+    }
+
+    /* 右側面板：三難度各一小格，數字在上、名稱在下；當前難度以天青標示 */
+    .clears {
+      display: flex;
+      gap: 6px;
+    }
+
+    .clear-item {
+      flex: 1 1 0;
+      min-width: 0;
+      text-align: center;
+      padding: 7px 4px 6px;
+      border-radius: 6px;
+      border: 1px solid var(--ink-line);
+      background: rgba(255, 255, 255, .18);
+      font-size: 11.5px;
+      color: var(--ink-soft);
+      letter-spacing: 1px;
+      line-height: 1.15;
+    }
+
+    .clear-item b {
+      display: block;
+      font-size: 19px;
+      font-weight: 700;
+      color: var(--ink);
+      letter-spacing: 0;
+    }
+
+    .clear-item.cur {
+      border-color: var(--celadon-2);
+      background: rgba(107, 163, 160, .14);
+    }
+
+    .clear-item.cur b {
+      color: var(--celadon-2);
+    }
+
+    /* 開始封面：單行、極簡，「通關」字樣＋三難度數字 */
+    .cover-clears {
+      margin-top: 16px;
+      display: flex;
+      align-items: baseline;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 4px 12px;
+      color: var(--ink-soft);
+      font-size: clamp(11px, 3vw, 12.5px);
+      letter-spacing: 1px;
+    }
+
+    .cover-clears .cc-label {
+      letter-spacing: 3px;
+    }
+
+    .cover-clears #clearsCover {
+      display: inline-flex;
+      gap: 12px;
+    }
+
+    .cover-clears .clear-item {
+      flex: 0 0 auto;
+      border: none;
+      background: none;
+      padding: 0;
+      font-size: inherit;
+      letter-spacing: 1px;
+    }
+
+    .cover-clears .clear-item b {
+      display: inline;
+      font-size: clamp(13px, 3.4vw, 15px);
+      color: var(--ink-2);
+      margin-right: 3px;
+    }
+
+    .cover-clears .clear-item.cur b {
+      color: var(--celadon-2);
+    }
+
     /* ---------- 結算 ---------- */
     .overlay {
       position: fixed;
@@ -624,6 +877,22 @@
     }
 
     /* ---------- 水墨動態（anime.js） ---------- */
+    /* 遊戲內背景：滿版水墨山水（本地圖 screen.png），墊在動態霧氣與棋盤之下；缺圖時退回 body 的宣紙底 */
+    .scene-bg {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background: url("screen.png") center center / cover no-repeat;
+    }
+
+    /* 深色模式：反相成暗底淡墨山水 */
+    @media (prefers-color-scheme: dark) {
+      .scene-bg {
+        filter: grayscale(1) invert(1) brightness(.82) contrast(1.05);
+      }
+    }
+
     .ambient {
       position: fixed;
       inset: 0;
@@ -730,16 +999,16 @@
     /* ---------- 暗色：墨底宣紙（跟隨系統深色） ---------- */
     @media (prefers-color-scheme: dark) {
       :root {
-        --paper: #211c15;
-        --paper-2: #191510;
-        --paper-hi: #2c261d;
-        --ink: #ece2cf;
-        --ink-2: #cabfa6;
-        --ink-soft: #93876f;
-        --ink-line: rgba(236, 226, 207, .16);
+        --paper: #201d19;
+        --paper-2: #181613;
+        --paper-hi: #2a2622;
+        --ink: #ebe6dd;
+        --ink-2: #c7c1b6;
+        --ink-soft: #8f8a80;
+        --ink-line: rgba(235, 233, 228, .16);
         --celadon: #7cb6b0;
         --celadon-2: #9dccc5;
-        --seal: #cf5842;
+        --seal: #d2453f;
         --gamboge: #d7ab48;
         --shadow: rgba(0, 0, 0, .5);
         --paper-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E");
@@ -755,7 +1024,8 @@
 
       .target-row,
       .color-btn,
-      .btn {
+      .btn,
+      .clear-item {
         background: rgba(255, 255, 255, .05);
       }
 
@@ -778,7 +1048,34 @@
 </head>
 
 <body>
+  <div class="scene-bg" aria-hidden="true"></div>
   <div class="ambient" id="ambient"><span></span><span></span></div>
+
+  <!-- 開始畫面（封面）：載入時顯示，按「開始遊戲」才進入遊戲 -->
+  <div class="cover" id="cover">
+    <!-- 滿版水墨山水背景（本地圖檔 cover-bg.png，非外連）：上緣以遮罩溶進宣紙留白給題字 -->
+    <div class="cover-bg"></div>
+
+    <div class="cover-inner">
+      <h1 class="cover-title"><span class="cch">墨</span><span class="cch">染</span><span class="cch tq">天</span><span
+          class="cch tq">青</span></h1>
+      <div class="cover-en">INKFLOW</div>
+      <div class="brush-divider"></div>
+      <p class="cover-poem">一筆落，漣漪起。山河褪色，待君潑墨破殘局。</p>
+      <div class="cover-seal">墨染</div>
+      <div class="cover-diff">
+        <div class="label">難度</div>
+        <div class="seg" id="coverDiffSeg">
+          <button data-diff="easy">簡單</button>
+          <button data-diff="normal" class="active">普通</button>
+          <button data-diff="hard">困難</button>
+        </div>
+      </div>
+      <div class="cover-clears"><span class="cc-label">通關</span><span id="clearsCover"></span></div>
+      <button class="btn primary cover-start" id="startBtn">開始遊戲</button>
+    </div>
+  </div>
+
   <div class="app">
     <header>
       <h1><span class="ch">墨</span><span class="ch">染</span><span class="ch tq">天</span><span
@@ -824,6 +1121,13 @@
             <button data-diff="normal" class="active">普通</button>
             <button data-diff="hard">困難</button>
           </div>
+        </div>
+        <div>
+          <div class="clears-head">
+            <span class="label">通關數</span>
+            <button class="mini-btn" id="resetClearsBtn" title="清除所有難度的通關數">歸零</button>
+          </div>
+          <div class="clears" id="clearsPanel"></div>
         </div>
         <div class="help">先選色，再點畫布上的格子上色<br>鍵盤 1–5 選色 ・ H 提示 ・ R 重來 ・ N 新關卡</div>
       </aside>
@@ -872,10 +1176,40 @@
       var toastEl = $("toast");
 
       var difficulty = "normal";
+      var gameStarted = false;         // 是否已離開封面、進入遊戲
       var level = null, game = null;
       var armedColor = 0;              // 目前選中的顏色（先選色，再點格上色）
       var cellEls = [], colorBtns = [], previewEls = [];
       var cleanupTimer = null, overlayTimer = null, toastTimer = null;
+
+      // ---------- 通關數（分難度累計，localStorage 存檔，離線可用） ----------
+      var DIFF_ORDER = ["easy", "normal", "hard"];
+      var TEST_HASH = /^#(autotest|winshot|loseshot|waveshot|musictest)$/.test(location.hash);
+      var clears = { easy: 0, normal: 0, hard: 0 };
+      try {
+        var _rawClears = localStorage.getItem("inkflow-clears");
+        if (_rawClears) {
+          var _o = JSON.parse(_rawClears);
+          if (_o && typeof _o === "object") { clears.easy = _o.easy | 0; clears.normal = _o.normal | 0; clears.hard = _o.hard | 0; }
+        }
+      } catch (e) { }
+      function saveClears() { try { localStorage.setItem("inkflow-clears", JSON.stringify(clears)); } catch (e) { } }
+      function clearsHTML() {
+        return DIFF_ORDER.map(function (d) {
+          return '<span class="clear-item' + (d === difficulty ? " cur" : "") + '"><b>' + (clears[d] || 0) + "</b>" + DIFF_NAMES[d] + "</span>";
+        }).join("");
+      }
+      function renderClears() {
+        var html = clearsHTML();
+        var p = $("clearsPanel"); if (p) p.innerHTML = html;
+        var c = $("clearsCover"); if (c) c.innerHTML = html;
+      }
+      function bumpClears() {                     // 真正獲勝時 +1；測試/截圖掛鉤不計入
+        if (TEST_HASH) return;
+        clears[difficulty] = (clears[difficulty] || 0) + 1;
+        saveClears();
+        renderClears();
+      }
 
       // ---------- 音效（WebAudio 合成，無需外部檔案） ----------
       var audioOn = true;
@@ -982,6 +1316,23 @@
         buildBoard(true);
         updatePanel(false);
         hideOverlay();
+      }
+
+      // 離開封面、開始遊戲：建盤（含入場動畫）、題字滲墨、順勢啟動背景音樂
+      // immediate=true 供測試／截圖掛鉤跳過封面淡出直接開局
+      function startGame(immediate) {
+        if (gameStarted) return;
+        gameStarted = true;
+        newLevel();
+        titleBleedIn();
+        kickMusic();               // 使用者第一次互動：解鎖瀏覽器自動播放限制
+        var cover = $("cover");
+        if (immediate) {
+          cover.style.display = "none";
+        } else {
+          cover.classList.add("hide");
+          setTimeout(function () { cover.style.display = "none"; }, 650);
+        }
       }
 
       function buildBoard(entrance) {
@@ -1093,6 +1444,7 @@
         sndMove(res.absorbed.length > 0);
         animateMove(res);
         updatePanel(true);
+        if (res.status === "won") bumpClears();   // 累計通關數 +1（分難度）
         if (res.status !== "playing") {
           clearTimeout(overlayTimer);
           overlayTimer = setTimeout(function () { showOverlay(res); }, res.maxD * WAVE + 620);
@@ -1326,6 +1678,40 @@
         }, 1600);
       }
 
+      // 封面題字滲墨：「墨染天青」如濕墨滲入宣紙般逐字浮現，英文與說明隨後淡入
+      function coverTitleBleedIn() {
+        var chars = [].slice.call(document.querySelectorAll(".cover-title .cch"));
+        if (!ANIM || !chars.length) return;
+        chars.forEach(function (ch) { ch.style.opacity = 0; ch.style.filter = "blur(8px)"; });
+        anime({
+          targets: chars,
+          opacity: [0, 1],
+          translateY: [10, 0],
+          scale: [1.12, 1],
+          easing: "easeOutQuad",
+          duration: 1000,
+          delay: anime.stagger(140, { start: 200 }),
+          update: function () {
+            chars.forEach(function (ch) {
+              var o = parseFloat(getComputedStyle(ch).opacity) || 0;
+              ch.style.filter = "blur(" + ((1 - o) * 8).toFixed(2) + "px)";
+            });
+          },
+          complete: function () { chars.forEach(function (ch) { ch.style.filter = "none"; }); }
+        });
+        anime({ targets: ".cover-en, .cover-poem", opacity: [0, 1], translateY: [8, 0], easing: "easeOutQuad", duration: 900, delay: 720 });
+        anime({ targets: ".brush-divider", scaleX: [0, 1], opacity: [0, .32], easing: "easeOutQuad", duration: 900, delay: 640 });
+        // 保險：即使動畫因環境未跑完，1.8s 後題字、英文與詩句也一定完整顯示（分隔線回到 CSS 的 .32）
+        setTimeout(function () {
+          chars.forEach(function (ch) { ch.style.opacity = 1; ch.style.filter = "none"; ch.style.transform = "none"; });
+          [].slice.call(document.querySelectorAll(".cover-en, .cover-poem")).forEach(function (el) {
+            el.style.opacity = 1; el.style.transform = "none";
+          });
+          var bd = document.querySelector(".brush-divider");
+          if (bd) { bd.style.opacity = ""; bd.style.transform = "none"; }
+        }, 1800);
+      }
+
       function toast(msg) {
         toastEl.textContent = msg;
         toastEl.classList.add("show");
@@ -1353,9 +1739,31 @@
       }
 
       // ---------- 事件 ----------
+      $("startBtn").addEventListener("click", function () { startGame(false); });
       $("restartBtn").addEventListener("click", restart);
       $("newBtn").addEventListener("click", newLevel);
       $("hintBtn").addEventListener("click", hint);
+
+      // 通關數歸零：兩段式確認（先按變朱砂「確定歸零?」，3 秒內再按一次才真的清）
+      var resetBtn = $("resetClearsBtn");
+      var resetArmed = false, resetTimer = null;
+      function disarmReset() { resetArmed = false; resetBtn.classList.remove("arm"); resetBtn.textContent = "歸零"; clearTimeout(resetTimer); }
+      resetBtn.addEventListener("click", function () {
+        if (!resetArmed) {
+          resetArmed = true;
+          resetBtn.classList.add("arm");
+          resetBtn.textContent = "確定歸零?";
+          toast("再按一次「確定歸零」清除所有通關數");
+          clearTimeout(resetTimer);
+          resetTimer = setTimeout(disarmReset, 3000);
+          return;
+        }
+        disarmReset();
+        clears = { easy: 0, normal: 0, hard: 0 };
+        saveClears();
+        renderClears();
+        toast("通關數已歸零");
+      });
 
       var soundBtn = $("soundBtn");
       soundBtn.textContent = audioOn ? "🔊" : "🔇";
@@ -1384,17 +1792,35 @@
       window.addEventListener("keydown", kickMusic);
 
       var segBtns = document.querySelectorAll("#diffSeg button");
+      var coverSegBtns = document.querySelectorAll("#coverDiffSeg button");
+      // 封面與面板兩組難度按鈕共用同一 difficulty，選中狀態一起更新
+      function syncDiffSegs() {
+        segBtns.forEach(function (x) { x.classList.toggle("active", x.dataset.diff === difficulty); });
+        coverSegBtns.forEach(function (x) { x.classList.toggle("active", x.dataset.diff === difficulty); });
+        renderClears();   // 目前難度以天青標示，跟著難度切換更新
+      }
       segBtns.forEach(function (b) {
         b.addEventListener("click", function () {
           if (b.dataset.diff === difficulty) return;
           difficulty = b.dataset.diff;
-          segBtns.forEach(function (x) { x.classList.toggle("active", x === b); });
+          syncDiffSegs();
           newLevel();
+        });
+      });
+      // 封面上選難度：只記錄，不建盤（按「開始遊戲」才依當前難度開局）
+      coverSegBtns.forEach(function (b) {
+        b.addEventListener("click", function () {
+          difficulty = b.dataset.diff;
+          syncDiffSegs();
         });
       });
 
       document.addEventListener("keydown", function (e) {
         if (e.repeat) return;
+        if (!gameStarted) {                       // 封面階段：Enter／空白鍵＝開始遊戲
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); startGame(false); }
+          return;
+        }
         var k = e.key.toLowerCase();
         if (k >= "1" && k <= "9") {
           var c = parseInt(k, 10) - 1;
@@ -1404,23 +1830,28 @@
         else if (k === "h") hint();
       });
 
-      // 允許 #easy / #normal / #hard 指定初始難度
+      // 允許 #easy / #normal / #hard 指定初始難度（封面與面板同步反映）
       var hashDiff = location.hash.replace("#", "");
-      if (Core.PRESETS[hashDiff]) {
-        difficulty = hashDiff;
-        segBtns.forEach(function (x) { x.classList.toggle("active", x.dataset.diff === hashDiff); });
-      }
+      if (Core.PRESETS[hashDiff]) difficulty = hashDiff;
+      syncDiffSegs();
 
-      newLevel();
-      titleBleedIn();
       startAmbient();
+
+      // 測試／截圖掛鉤需要遊戲即時開局，故跳過封面直接開始；一般載入則停在封面等「開始遊戲」
+      var SKIP_COVER = TEST_HASH;
+      if (SKIP_COVER) {
+        startGame(true);
+      } else {
+        coverTitleBleedIn();
+      }
 
       // 除錯／自動化測試掛鉤（不影響一般遊玩）
       window.__inkflow = {
         get game() { return game; },
         get level() { return level; },
         get armed() { return armedColor; },
-        armColor: armColor, doMove: doMove, newLevel: newLevel, restart: restart, hint: hint
+        armColor: armColor, doMove: doMove, newLevel: newLevel, restart: restart, hint: hint,
+        startGame: startGame
       };
 
       // 視覺驗證用掛鉤（headless 截圖）

@@ -6,8 +6,9 @@
 
 ## 遊玩方式
 
-直接用瀏覽器開啟 `index.html` 即可（無需連網；同資料夾需有 `game.js`、`anime.min.js`、`Music.mp3`）。
-背景音樂載入 `Music.mp3`，某些瀏覽器對 `file://` 的媒體較嚴，建議用本機伺服器（如 VS Code Live Server）開啟。
+直接用瀏覽器開啟 `index.html` 即可（無需連網；同資料夾需有 `game.js`、`anime.min.js`、`Music.mp3`、`cover-bg.png`、`screen.png`）。
+開啟後先進入水墨封面（滿版水墨山水背景圖＋題字＋毛筆分隔線＋詩句＋朱砂印章＋難度選擇），按「開始遊戲」（或 `Enter`／空白鍵）才進入盤面，此時順勢啟動背景音樂。
+背景圖 `cover-bg.png` 與背景音樂 `Music.mp3` 皆為本地檔；某些瀏覽器對 `file://` 的本地媒體較嚴，建議用本機伺服器（如 VS Code Live Server）開啟。
 
 - **先選色，再點格**：點右側色盤（或按 `1`–`5`）選一個顏色，再點畫布上想染的格子；
   染色會以波紋自被點格向外擴散並繞過障礙物
@@ -33,7 +34,9 @@
 | 檔案 | 說明 |
 |---|---|
 | `game.js` | 核心邏輯（UMD）：自由選格泛洪染色、吞併、勝負判定、區域圖 beam 求解器、關卡產生器 |
-| `index.html` | 遊戲介面：水墨主題（宣紙／墨／天青，含跟隨系統的深色變體）、落墨暈染、潑墨結算、天青水氣、題字滲墨等水墨動態、hover 區塊預覽、WebAudio 合成音效＋背景音樂（🔊／🎵 可切換） |
+| `index.html` | 遊戲介面：水墨主題（宣紙／墨／天青，含跟隨系統的深色變體）、開始封面（滿版水墨山水背景圖，上緣遮罩溶進宣紙留白；毛筆分隔線＋斜體詩句題款）、落墨暈染、潑墨結算、天青水氣、題字滲墨等水墨動態、hover 區塊預覽、WebAudio 合成音效＋背景音樂（🔊／🎵 可切換） |
+| `cover-bg.png` | 開始封面的水墨山水背景圖（本地檔，離線可用；深色模式自動反相為暗底淡墨） |
+| `screen.png` | 遊戲內的水墨山水背景圖（墊在動態霧氣與棋盤之下；本地檔、深色模式自動反相） |
 | `anime.min.js` | 本機打包的 anime.js v3（驅動水墨動態；離線可用、非 CDN） |
 | `Music.mp3` | 背景音樂（Suno 生成、使用者提供；循環播放，🎵 可切換） |
 | `test.js` | 自動化測試 |
@@ -47,6 +50,7 @@ node test.js                 # 49 項核心邏輯測試（泛洪、自由選格�
 UI 整合測試（headless 瀏覽器自動打完整關）：開啟 `index.html#autotest`，
 結果寫入 `document.title`（`TEST:PASS` / `TEST:FAIL`）與隱藏的 `#testlog` 元素。
 
-其他除錯掛鉤：`#easy` / `#normal` / `#hard` 指定初始難度，
+其他除錯掛鉤：`#easy` / `#normal` / `#hard` 指定初始難度（仍會顯示封面、只是預選好難度），
+`#autotest` / `#winshot` / `#loseshot` / `#waveshot` / `#musictest` 會**跳過封面直接開局**——
 `#winshot` / `#loseshot` / `#waveshot` 供截圖驗證視覺效果、`#musictest` 驗證背景音樂圖能否建立，
 `window.__inkflow` 可在 console 直接操作遊戲狀態（`armColor` 選色、`doMove(color,x,y)` 染格）。

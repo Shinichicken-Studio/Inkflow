@@ -1148,6 +1148,7 @@
 
   <script src="anime.min.js"></script>
   <script src="game.js"></script>
+  <script src="analytics.js"></script>
   <script>
     (function () {
       "use strict";
@@ -1210,6 +1211,30 @@
         saveClears();
         renderClears();
       }
+
+      // ---------- 匿名遊玩統計掛鉤（analytics.js 未設定 endpoint 時全部是空動作） ----------
+      function ev(name, props) {
+        try { if (window.InkflowAnalytics) window.InkflowAnalytics.track(name, props); } catch (e) { }
+      }
+      var lvStartAt = 0, lvHints = 0, lvLogged = true;   // lvLogged=true：目前沒有待結算的關卡
+      function evLevelStart() {
+        if (!game) return;
+        lvStartAt = Date.now(); lvHints = 0; lvLogged = false;
+        ev("level_start", { diff: difficulty, w: game.w, h: game.h, colors: level.colors, par: game.maxSteps });
+      }
+      // result: won / lost / abandoned（換關、重試、關掉分頁都算 abandoned）
+      function evLevelEnd(result) {
+        if (lvLogged || !game) return;
+        lvLogged = true;
+        ev("level_end", {
+          diff: difficulty, result: result, steps: game.steps, par: game.maxSteps,
+          ms: Date.now() - lvStartAt, hints: lvHints
+        });
+      }
+      // 玩家離開頁面時，把還沒結束的那一關記成 abandoned，才能看出玩家卡在第幾步棄坑
+      try {
+        if (window.InkflowAnalytics) window.InkflowAnalytics.onEnd = function () { evLevelEnd("abandoned"); };
+      } catch (e) { }
 
       // ---------- 音效（WebAudio 合成，無需外部檔案） ----------
       var audioOn = true;
@@ -1299,6 +1324,7 @@
       }
 
       function newLevel() {
+        evLevelEnd("abandoned");      // 上一關還沒結束就換關：記成棄坑
         var preset = Object.assign({}, Core.PRESETS[difficulty]);
         level = Core.generateLevel(preset) || Core.generateLevel(Object.assign(preset, { attempts: 300 }));
         game = Core.createGame(level);
@@ -1308,14 +1334,17 @@
         updatePanel(false);
         updateInfo();
         hideOverlay();
+        evLevelStart();
       }
 
       function restart() {
+        evLevelEnd("abandoned");
         game = Core.createGame(level);
         armedColor = 0;
         buildBoard(true);
         updatePanel(false);
         hideOverlay();
+        evLevelStart();
       }
 
       // 離開封面、開始遊戲：建盤（含入場動畫）、題字滲墨、順勢啟動背景音樂
@@ -1323,6 +1352,7 @@
       function startGame(immediate) {
         if (gameStarted) return;
         gameStarted = true;
+        ev("start", { diff: difficulty });   // 離開封面真的開始玩（用來算封面跳出率）
         newLevel();
         titleBleedIn();
         kickMusic();               // 使用者第一次互動：解鎖瀏覽器自動播放限制
@@ -1446,6 +1476,7 @@
         updatePanel(true);
         if (res.status === "won") bumpClears();   // 累計通關數 +1（分難度）
         if (res.status !== "playing") {
+          evLevelEnd(res.status);                 // won / lost
           clearTimeout(overlayTimer);
           overlayTimer = setTimeout(function () { showOverlay(res); }, res.maxD * WAVE + 620);
         }
@@ -1729,6 +1760,7 @@
           toast("剩餘步數已不足以完成（最少還需 " + sol.steps + " 步），建議重新開始");
           return;
         }
+        lvHints++;                 // 本關用掉的提示數（隨 level_end 一起回報）
         armColor(mv.color);        // 幫玩家選好建議的顏色
         var b = colorBtns[mv.color];
         b.classList.remove("hint-flash");

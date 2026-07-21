@@ -1,0 +1,17 @@
+{
+  "name": "inkflow-analytics-worker",
+  "private": true,
+  "description": "InkFlow 匿名遊玩統計後端（Cloudflare Worker + D1）",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "schema": "wrangler d1 execute inkflow-analytics --remote --file=./schema.sql",
+    "schema:local": "wrangler d1 execute inkflow-analytics --local --file=./schema.sql",
+    "tail": "wrangler tail",
+    "reset:local": "wrangler d1 execute inkflow-analytics --local --command=\"DELETE FROM events\"",
+    "test": "npm run reset:local && node test-worker.mjs && node test-analytics.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.112.0"
+  }
+}

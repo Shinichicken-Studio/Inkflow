@@ -1,0 +1,11 @@
+
+ ⛅️ wrangler 4.112.0
+────────────────────
+Using secrets defined in .dev.vars
+Your Worker has access to the following bindings:
+Binding                                  Resource                  Mode
+env.DB (inkflow-analytics)               D1 Database               local
+env.ADMIN_TOKEN ("(hidden)")             Environment Variable      local
+
+⎔ Starting local server...
+[wrangler:info] Ready on http://127.0.0.1:8787

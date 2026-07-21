@@ -39,12 +39,26 @@
 | `screen.png` | 遊戲內的水墨山水背景圖（墊在動態霧氣與棋盤之下；本地檔、深色模式自動反相） |
 | `anime.min.js` | 本機打包的 anime.js v3（驅動水墨動態；離線可用、非 CDN） |
 | `Music.mp3` | 背景音樂（Suno 生成、使用者提供；循環播放，🎵 可切換） |
+| `analytics.js` | 匿名遊玩統計埋點（預設關閉；設定方式見 `docs/cloudflare-setup.md`） |
+| `worker/` | 統計後端（Cloudflare Worker + D1）與它的測試 |
 | `test.js` | 自動化測試 |
+
+## 遊玩統計（選用，預設關閉）
+
+`analytics.js` 可以匿名回報「有多少人玩、停留多久、卡在哪一關的第幾步」到自架的
+Cloudflare Worker，後台在 `https://<你的worker>/admin?token=<密碼>`。
+
+**預設完全關閉**——`analytics.js` 最上面的 `ENDPOINT` 留空時整個模組是空動作，
+離線遊玩、`file://` 直接開檔、以及所有 `#autotest` 之類的測試掛鉤都不會送出任何資料。
+不收集 IP、User-Agent 或任何個人資料，只有一組隨機匿名 id；尊重瀏覽器的 Do Not Track。
+
+開啟方式與 Cloudflare 設定：[docs/cloudflare-setup.md](docs/cloudflare-setup.md)。
 
 ## 測試
 
 ```
 node test.js                 # 49 項核心邏輯測試（泛洪、自由選格吞併、勝負、求解器、產生器可解性與 par）
+cd worker && npm test        # 51 項統計測試（需另開終端機跑 npx wrangler dev）
 ```
 
 UI 整合測試（headless 瀏覽器自動打完整關）：開啟 `index.html#autotest`，

@@ -1,0 +1,17 @@
+# InkFlow 匿名統計 Worker 設定
+# 建置步驟見 ../docs/cloudflare-setup.md
+#
+# database_id 必須換成你自己的：執行 `npx wrangler d1 create inkflow-analytics`
+# 之後把它印出來的 id 貼到下面。
+
+name = "inkflow-analytics"
+main = "src/worker.js"
+compatibility_date = "2026-07-21"
+
+[[d1_databases]]
+binding = "DB"                     # 程式中以 env.DB 取用，不要改
+database_name = "inkflow-analytics"
+database_id = "貼上你的-database-id"
+
+# ADMIN_TOKEN 是後台密碼，不寫在這個檔（會進 git）。
+# 用這個指令設定：npx wrangler secret put ADMIN_TOKEN

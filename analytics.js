@@ -16,7 +16,7 @@
   // 例：var ENDPOINT = "https://inkflow-analytics.你的帳號.workers.dev/e";
   // 留空 = 停用（什麼都不送）。設定方式見 docs/cloudflare-setup.md
   // ============================================================
-  var ENDPOINT = "";
+  var ENDPOINT = "https://inkflow-analytics.haibaraai0328.workers.dev/e";
 
   var VERSION = 3;                  // 事件格式版本；改欄位時 +1，方便日後分辨舊資料
   var FLUSH_INTERVAL_MS = 30000;    // 每 30 秒送出一次佇列（同時當作心跳）

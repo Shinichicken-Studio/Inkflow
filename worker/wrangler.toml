@@ -11,7 +11,7 @@ compatibility_date = "2026-07-21"
 [[d1_databases]]
 binding = "DB"                     # 程式中以 env.DB 取用，不要改
 database_name = "inkflow-analytics"
-database_id = "貼上你的-database-id"
+database_id = "8b3cfa71-dda3-44b2-8f8a-5dca2ecdab8e"
 
 # ADMIN_TOKEN 是後台密碼，不寫在這個檔（會進 git）。
 # 用這個指令設定：npx wrangler secret put ADMIN_TOKEN
